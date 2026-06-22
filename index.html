@@ -575,3 +575,284 @@ function startTimer() {
             c.element.classList.add('working');
             c.element.style.backgroundImage = `url('${c.imgWork}')`;
         });
+    }
+
+    // 機能制限の有効化（ごはんボタン非活性など）
+    stageMenuBtn.disabled = true;
+
+    timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+            isTimerRunning = false;
+            onPhaseComplete();
+        }
+    }, 1000);
+}
+
+function pauseTimer() {
+    if (!isTimerRunning) return;
+    clearInterval(timerInterval);
+    isTimerRunning = false;
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    timerStatus.innerText = '⏸️ 一時停止中';
+}
+
+function resetTimer() {
+    clearInterval(timerInterval);
+    isTimerRunning = false;
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    document.getElementById('timerMode').disabled = false;
+    stageMenuBtn.disabled = false;
+    currentPhase = 'idle';
+    timerStatus.innerText = 'お部屋でのんびり中';
+
+    charas.forEach(c => {
+        c.element.classList.remove('working');
+        c.element.style.backgroundImage = `url('${c.imgNormal}')`;
+    });
+
+    const mode = document.getElementById('timerMode').value;
+    if (mode === 'pomodoro') timeLeft = 25 * 60;
+    else syncCustomTime();
+
+    updateTimerDisplay();
+    updateBackground();
+}
+
+// フェーズ終了処理
+function onPhaseComplete() {
+    const alarmType = document.getElementById('alarmSelect').value;
+    // 擬似的にsrcを切り替えてアラームを鳴らす（実際は対応ファイル名を用意）
+    alarmSound.src = `${alarmType}.mp3`;
+    playSE(alarmSound);
+
+    const now = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+    if (currentPhase === 'work') {
+        pomodoroSessionCount++;
+        addLog(`[${now}] 🎯 集中セッション達成！ (${pomodoroSessionCount}回目)`);
+        
+        // 休憩フェーズへ移行
+        currentPhase = 'break';
+        timerStatus.innerText = '☕ 休憩時間。おつかれさま！';
+        
+        // キャラクター大喜びモーション
+        charas.forEach(c => {
+            c.element.classList.remove('working');
+            c.element.style.backgroundImage = `url('${c.imgEat}')`;
+            showBubble(c, '🎉 お疲れ様！');
+            doPyon(c, () => setTimeout(() => c.bubble.style.display='none', 1500));
+        });
+
+        // 休憩時間をセット
+        const mode = document.getElementById('timerMode').value;
+        const breakMin = (mode === 'pomodoro') ? 5 : (parseInt(document.getElementById('customBreak').value) || 5);
+        timeLeft = breakMin * 60;
+        
+        // 機能制限解除（休憩中はおやつをあげられる）
+        stageMenuBtn.disabled = false;
+        
+        startTimer(); // 自動で休憩スタート
+    } else if (currentPhase === 'break') {
+        addLog(`[${now}] ☕ 休憩終了。次の準備をしよう！`);
+        resetTimer();
+    }
+}
+
+// 進捗ログ追加
+function addLog(text) {
+    const li = document.createElement('li');
+    li.innerText = text;
+    progressList.insertBefore(li, progressList.firstChild);
+}
+
+// --- 環境音・音量・窓変更システム ---
+const bgmFiles = { umi: 'umi.mp3', rain: 'rain.mp3', forest: 'forest.mp3' };
+function changeBGM() {
+    const type = document.getElementById('bgmSelect').value;
+    
+    // 窓の外のエフェクト切り替え
+    windowOverlay.className = 'window-overlay ' + type;
+    
+    bgm.src = bgmFiles[type];
+    if (audioUnlocked) {
+        playCurrentBGM();
+    }
+}
+
+function playCurrentBGM() {
+    bgm.volume = parseFloat(document.getElementById('volumeSlider').value);
+    bgm.play().catch(e => console.log("BGM再生不可:", e));
+}
+
+function adjustVolume() {
+    bgm.volume = parseFloat(document.getElementById('volumeSlider').value);
+}
+
+// --- インタラクション制限（タイマー集中時のガード） ---
+function isInteractionRestricted() {
+    if (currentPhase === 'work') {
+        // 集中時間内は、吹き出しでやんわり拒否
+        charas.forEach(c => {
+            showBubble(c, '🤫 今は集中！');
+            setTimeout(() => c.bubble.style.display = 'none', 1000);
+        });
+        return true;
+    }
+    return false;
+}
+
+// 床タップで集まる機能
+stage.addEventListener('click', e => {
+    if (e.target !== stage) return;
+    if (isInteractionRestricted()) return;
+
+    const stageRect = stage.getBoundingClientRect();
+    const tapX = e.clientX - stageRect.left;
+    const tapY = stageRect.bottom - e.clientY;
+
+    charas.forEach((c, i) => {
+        if (c.isDragging) return;
+        c.isSleeping = false;
+        c.element.classList.remove('sleep');
+        c.isReacting = true;
+        
+        const offset = (i - 0.5) * 50;
+        c.x = Math.max(10, Math.min(tapX + offset, 245));
+        c.y = c.id === 3 ? Math.max(100, Math.min(tapY, 220)) : Math.max(40, Math.min(tapY, 150));
+        c.direction = (tapX + offset < c.x) ? 1 : -1;
+        updatePosition(c, true);
+
+        setTimeout(() => {
+            playSE(chatSound);
+            showBubble(c, ['✨','🎵'][i]);
+            c.isReacting = false;
+            setTimeout(() => { c.bubble.style.display = 'none'; scheduleWalk(c); }, 1200);
+        }, 1600);
+    });
+});
+
+// ドラッグ処理・おやつ処理のラッパー部 ( makeDraggable の冒頭にガードを導入 )
+function makeDraggable(chara) {
+    let dragging = false;
+    let startClientX, startClientY, startCharaX, startCharaY;
+    let dragMoved = false;
+
+    function onDragStart(clientX, clientY) {
+        if (isInteractionRestricted()) return; // タイマー稼働中はドラッグ不可
+        unlockAudio();
+        
+        if (chara.isSleeping) {
+            chara.isSleeping = false;
+            chara.element.classList.remove('sleep');
+            scheduleWalk(chara);
+            return;
+        }
+
+        dragging = true; dragMoved = false;
+        chara.isDragging = chara.isReacting = true;
+        if (chara.walkTimer) { clearTimeout(chara.walkTimer); chara.walkTimer = null; }
+
+        startClientX = clientX; startClientY = clientY;
+        startCharaX = chara.x;  startCharaY = chara.y;
+        chara.element.style.backgroundImage = `url('${chara.imgKyaa}')`;
+        updatePosition(chara, false);
+    }
+
+    function onDragMove(clientX, clientY) {
+        if (!dragging) return;
+        const dx = clientX - startClientX; const dy = clientY - startClientY;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+            if (!dragMoved) playSE(dragSound);
+            dragMoved = true;
+        }
+        chara.x = Math.max(0, Math.min(startCharaX + dx, 255));
+        chara.y = Math.max(10, Math.min(startCharaY - dy, 440));
+        updatePosition(chara, false);
+    }
+
+    function onDragEnd() {
+        if (!dragging) return; dragging = false;
+        chara.isDragging = chara.isReacting = false;
+        chara.element.style.backgroundImage = `url('${chara.imgNormal}')`;
+
+        if (dragMoved) {
+            const landMax = chara.maxY ?? 150;
+            if (chara.y > landMax) chara.y = landMax;
+            if (chara.y < 40) chara.y = 40;
+            playSE(dropSound);
+            showBubble(chara, '💦');
+            setTimeout(() => chara.bubble.style.display = 'none', 1000);
+        } else {
+            // タップ（なでなで）効果
+            spawnHeart(chara);
+            playSE(chatSound);
+        }
+        updatePosition(chara, true);
+        scheduleWalk(chara);
+    }
+
+    chara.element.addEventListener('mousedown', e => { if(e.button===0){ e.preventDefault(); onDragStart(e.clientX, e.clientY); }});
+    document.addEventListener('mousemove', e => { if (dragging) onDragMove(e.clientX, e.clientY); });
+    document.addEventListener('mouseup', () => { if (dragging) onDragEnd(); });
+    chara.element.addEventListener('touchstart', e => { e.preventDefault(); onDragStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+    document.addEventListener('touchmove', e => { if (dragging) { onDragMove(e.touches[0].clientX, e.touches[0].clientY); } }, { passive: false });
+    document.addEventListener('touchend', () => { if (dragging) onDragEnd(); });
+}
+
+function spawnHeart(c) {
+    const heart = document.createElement('div');
+    heart.className = 'float-heart'; heart.textContent = '💖';
+    heart.style.left = (c.x + 30) + 'px'; heart.style.bottom = (c.y + 80) + 'px';
+    stage.appendChild(heart); setTimeout(() => heart.remove(), 1200);
+}
+
+function doPyon(c, onFinish) {
+    c.element.style.setProperty('--pyon-base', c.y + 'px');
+    c.element.classList.add('pyon');
+    c.element.addEventListener('animationend', function handler() {
+        c.element.classList.remove('pyon');
+        c.element.removeEventListener('animationend', handler);
+        if (onFinish) onFinish();
+    });
+}
+
+function toggleMenu() {
+    if (isInteractionRestricted()) return;
+    menuPopup.style.display = (menuPopup.style.display === 'flex') ? 'none' : 'flex';
+}
+
+function giveFood(imgFile) {
+    if (isInteractionRestricted()) return;
+    menuPopup.style.display = 'none';
+    charas.forEach(c => { if (c.walkTimer) { clearTimeout(c.walkTimer); c.walkTimer = null; } c.isReacting = true; });
+
+    snackEl.style.backgroundImage = `url('${imgFile}')`; snackEl.style.display = 'block';
+
+    const targets = [{ x:100, y:100, dir:-1 }, { x:180, y:100, dir:1 }];
+    charas.forEach((c, i) => { c.x = targets[i].x; c.y = targets[i].y; c.direction = targets[i].dir; updatePosition(c, true); });
+
+    setTimeout(() => {
+        playSE(eatSound);
+        charas.forEach(c => c.element.style.backgroundImage = `url('${c.imgEat}')`);
+        snackEl.style.display = 'none';
+        setTimeout(() => {
+            charas.forEach(c => { c.element.style.backgroundImage = `url('${c.imgNormal}')`; c.isReacting = false; scheduleWalk(c); });
+        }, 1500);
+    }, 1600);
+}
+
+// 初期起動
+charas.forEach(c => {
+    c.element.style.backgroundImage = `url('${c.imgNormal}')`;
+    updatePosition(c, false); makeDraggable(c); scheduleWalk(c);
+});
+updateBackground();
+</script>
+</body>
+</html>
