@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ちいさい春木大佐たちのタイマー部屋</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #e0f7fa;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .main-layout {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            align-items: flex-start;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        /* ステージ（ゲーム画面） */
+        .stage-container {
+            width: 350px;
+            height: 550px;
+            background-image: url('background_day.png');
+            background-size: cover;
+            background-position: center;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            position: relative;
+            overflow: hidden;
+            border: 6px solid #fff;
+            flex-shrink: 0;
+        }
+
+        /* 窓の外の景色（オーバーレイで環境音と連動） */
+        .window-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 1;
+            mix-blend-mode: multiply;
+            opacity: 0;
+            transition: opacity 1s ease;
+        }
+        .window-overlay.rain { background: rgba(0, 15, 30, 0.25); opacity: 1; }
+        .window-overlay.forest { background: rgba(10, 40, 10, 0.15); opacity: 1; }
+
+        /* キャラクター */
+        .character {
+            width: 95px;
+            height: 95px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: bottom center;
+            position: absolute;
+            cursor: grab;
+            user-select: none;
+            z-index: 10;
+        }
+        .character:active { cursor: grabbing; }
+
+        @keyframes sleepZzz {
+            0%   { opacity: 0; transform: translateY(0) scale(0.6); }
+            50%  { opacity: 1; }
+            100% { opacity: 0; transform: translateY(-20px) scale(1); }
+        }
+        .character.sleep::after {
+            content: '💤';
+            position: absolute;
+            top: -10px; right: 10px;
+            font-size: 16px;
+            animation: sleepZzz 2s infinite ease-in-out;
+        }
+
+        /* ふきだし */
+        .speech-bubble {
+            position: absolute;
+            background: white;
+            border-radius: 10px;
+            padding: 5px 10px;
+            font-size: 11px;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: none;
+            z-index: 30;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        .speech-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -5px; left: 50%;
+            transform: translateX(-50%);
+            border-width: 5px 5px 0;
+            border-style: solid;
+            border-color: white transparent;
+            display: block; width: 0;
+        }
+
+        @keyframes pyon {
+            0%   { bottom: var(--pyon-base); }
+            35%  { bottom: calc(var(--pyon-base) + 25px); }
+            65%  { bottom: calc(var(--pyon-base) + 25px); }
+            100% { bottom: var(--pyon-base); }
+        }
+        .pyon { animation: pyon 0.45s ease-in-out forwards; }
+
+        /* 作業中アニメーション */
+        @keyframes typing {
+            0%, 100% { transform: scaleX(var(--chara-dir)) scale(var(--chara-scale)) translateY(0); }
+            50% { transform: scaleX(var(--chara-dir)) scale(var(--chara-scale)) translateY(-4px); }
+        }
+        .working { animation: typing 0.6s infinite ease-in-out; }
+
+        .snack {
+            width: 45px; height: 45px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            position: absolute;
+            bottom: 155px; right: 110px;
+            display: none; z-index: 15;
+        }
+
+        /* 画面内簡易ごはんボタン（非集中時のみ有効） */
+        .stage-controls {
+            position: absolute;
+            bottom: 15px; width: 100%;
+            display: flex; flex-direction: column; align-items: center;
+            gap: 8px; z-index: 40;
+        }
+        .menu-popup {
+            display: none; background: rgba(255,255,255,0.95);
+            padding: 8px; border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); gap: 8px;
+        }
+
+        /* 右側：タイマー＆ダッシュボードパネル */
+        .dashboard-panel {
+            flex: 1;
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: 562px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        h2, h3 { margin: 0; color: #004d40; }
+        
+        .timer-display {
+            font-size: 48px;
+            font-weight: bold;
+            text-align: center;
+            color: #00796b;
+            font-variant-numeric: tabular-nums;
+            background: #e0f2f1;
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+        .timer-status {
+            text-align: center;
+            font-weight: bold;
+            color: #e65100;
+            height: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 8px 16px;
+            font-size: 12px; font-weight: bold;
+            border: none; border-radius: 25px;
+            background-color: #00796b;
+            color: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover { background-color: #004d40; transform: translateY(-1px); }
+        button:disabled { background-color: #b2dfdb; color: #80cbc4; cursor: not-allowed; transform: none; box-shadow: none; }
+        .menu-btn { background-color: #00796b; color: white; }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            gap: 10px;
+        }
+        select, input[type="number"] {
+            padding: 5px 10px;
+            border-radius: 5px;
+            border: 1px solid #b2dfdb;
+        }
+
+        .progress-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 12px;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 10px;
+        }
+        .progress-list li {
+            padding: 4px 0;
+            border-bottom: 1px dashed #eee;
+            color: #555;
+        }
+
+        @keyframes floatHeart {
+            0%   { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-50px) scale(1.4); }
+        }
+        .float-heart {
+            position: absolute;
+            font-size: 20px;
+            pointer-events: none; z-index: 50;
+            animation: floatHeart 1.2s ease-out forwards;
+        }
+
+        @media (max-width: 768px) {
+            .main-layout { flex-direction: column; align-items: center; }
+            .dashboard-panel { width: 350px; height: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-layout">
+    <div class="stage-container" id="stage">
+        <div id="windowOverlay" class="window-overlay"></div>
+
+        <div id="bubble1" class="speech-bubble"></div>
+        <div id="bubble3" class="speech-bubble"></div>
+
+        <div id="chara1" class="character"></div>
+        <div id="chara3" class="character"></div>
+
+        <div id="snack" class="snack"></div>
+
+        <div class="stage-controls">
+            <div id="menuPopup" class="menu-popup">
+                <button onclick="giveFood('snack.png')">🍩 ドーナツ</button>
+                <button onclick="giveFood('parfait.png')">🍨 パフェ</button>
+            </div>
+            <button id="stageMenuBtn" class="menu-btn" onclick="toggleMenu()">ごはんをあげる</button>
+        </div>
+    </div>
+
+    <div class="dashboard-panel">
+        <h2>⏱️ ポモドーロワークスペース</h2>
+        
+        <div id="timerStatus" class="timer-status">お部屋でのんびり中</div>
+        <div id="timerDisplay" class="timer-display">25:00</div>
+
+        <div class="control-group">
+            <button id="startBtn" onclick="startTimer()">スタート</button>
+            <button id="pauseBtn" onclick="pauseTimer()" disabled>一時停止</button>
+            <button id="resetBtn" onclick="resetTimer()">リセット</button>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid #e0e0e0; margin: 5px 0;">
+
+        <h3>⚙️ タイマー設定</h3>
+        <div class="setting-row">
+            <label>モード選択:</label>
+            <select id="timerMode" onchange="switchPresetMode()">
+                <option value="pomodoro">ポモドーロ (25分 / 5分)</option>
+                <option value="custom">カスタム手動設定</option>
+            </select>
+        </div>
+        <div id="customSettings" class="setting-row" style="display: none;">
+            <label>集中(分): <input type="number" id="customWork" value="25" min="1" max="180" style="width: 50px;"></label>
+            <label>休憩(分): <input type="number" id="customBreak" value="5" min="1" max="60" style="width: 50px;"></label>
+        </div>
+
+        <h3>🎵 環境音＆アラーム設定</h3>
+        <div class="setting-row">
+            <label>環境音 BGM:</label>
+            <select id="bgmSelect" onchange="changeBGM()">
+                <option value="umi">🌊 波の音</option>
+                <option value="rain">☔ 雨の音</option>
+                <option value="forest">🌲 森の音</option>
+            </select>
+        </div>
+        <div class="setting-row">
+            <label>BGM 音量:</label>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5" oninput="adjustVolume()">
+        </div>
+        <div class="setting-row">
+            <label>アラーム音:</label>
+            <select id="alarmSelect">
+                <option value="alarm1">⏰ デジタルアラーム</option>
+                <option value="alarm2">🔔 チャイム鈴</option>
+                <option value="alarm3">✨ キラキラサウンド</option>
+            </select>
+        </div>
+
+        <h3>📊 本日の進捗ログ</h3>
+        <ul id="progressList" class="progress-list">
+            </ul>
+    </div>
+</div>
+
+<audio id="bgm" loop><source src="umi.mp3" type="audio/mpeg"></audio>
+<audio id="eatSound"><source src="tabe.mp3" type="audio/mpeg"></audio>
+<audio id="dragSound"><source src="sound_drag.mp3" type="audio/mpeg"></audio>
+<audio id="dropSound"><source src="sound_drop.mp3" type="audio/mpeg"></audio>
+<audio id="chatSound"><source src="sound_chat.mp3" type="audio/mpeg"></audio>
+<audio id="alarmSound"></audio> <script>
+// --- タイマーステート情報 ---
+let timerInterval = null;
+let isTimerRunning = false;
+let currentPhase = 'idle'; // 'idle', 'work', 'break'
+let timeLeft = 25 * 60; 
+let pomodoroSessionCount = 0;
+
+// --- アプリ基本要素 ---
+const stage         = document.getElementById('stage');
+const windowOverlay = document.getElementById('windowOverlay');
+const snackEl       = document.getElementById('snack');
+const menuPopup     = document.getElementById('menuPopup');
+const stageMenuBtn  = document.getElementById('stageMenuBtn');
+
+const timerDisplay  = document.getElementById('timerDisplay');
+const timerStatus   = document.getElementById('timerStatus');
+const startBtn      = document.getElementById('startBtn');
+const pauseBtn      = document.getElementById('pauseBtn');
+const progressList   = document.getElementById('progressList');
+
+const bgm           = document.getElementById('bgm');
+const eatSound      = document.getElementById('eatSound');
+const dragSound     = document.getElementById('dragSound');
+const dropSound     = document.getElementById('dropSound');
+const chatSound     = document.getElementById('chatSound');
+const alarmSound    = document.getElementById('alarmSound');
+
+let audioUnlocked = false;
+
+// --- キャラクター定義（2人に集約） ---
+const charas = [
+    { id:1, element:document.getElementById('chara1'), bubble:document.getElementById('bubble1'),
+      imgNormal:'chara_normal.png',  imgEat:'chara_eat.png',      imgSleep:'chara1_sleep.png', imgKyaa:'chara1_kyaa.png', imgWork:'chara1_work.png',
+      x:60,  y:60,  direction:1, isReacting:false, isSleeping:false, isDragging:false, walkTimer:null, maxY:150, actionType:'walk' },
+    { id:3, element:document.getElementById('chara3'), bubble:document.getElementById('bubble3'),
+      imgNormal:'chara_death.png',   imgEat:'chara_death_eat.png',  imgSleep:'chara3_sleep.png', imgKyaa:'chara3_kyaa.png', imgWork:'chara3_work.png',
+      x:180, y:80,  direction:1, isReacting:false, isSleeping:false, isDragging:false, walkTimer:null, maxY:220, actionType:'walk' }
+];
+
+const chatPhrases = [["📝","🔥"], ["🧐","💡"], ["☕","🍩"], ["💤","⭐"]];
+
+// --- 初期セットアップ ---
+let currentTimeOfDay = -1;
+const backgrounds = { 0: 'background_morning.png', 1: 'background_day.png', 2: 'background_evening.png', 3: 'background_night.png' };
+
+function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    [eatSound, dragSound, dropSound, chatSound, alarmSound].forEach(audio => {
+        audio.play().then(() => { audio.pause(); audio.currentTime = 0; }).catch(e => {});
+    });
+    playCurrentBGM();
+}
+
+function playSE(audioEl) {
+    if (!audioEl) return;
+    unlockAudio();
+    audioEl.currentTime = 0;
+    audioEl.play().catch(e => console.log("SEエラー:", e));
+}
+
+function getTimeOfDay() {
+    const h = new Date().getHours();
+    if (h >= 5  && h < 11) return 0;
+    if (h >= 11 && h < 17) return 1;
+    if (h >= 17 && h < 21) return 2;
+    return 3;
+}
+
+function updateBackground() {
+    const t = getTimeOfDay();
+    if (t !== currentTimeOfDay) {
+        currentTimeOfDay = t;
+        stage.style.backgroundImage = `url('${backgrounds[t]}')`;
+        // タイマー稼働中でなければ、夜モードで眠らせる
+        if (t === 3 && currentPhase === 'idle') {
+            startNightMode();
+        } else if (t !== 3) {
+            endNightMode();
+        }
+    }
+}
+setInterval(updateBackground, 30000);
+
+// --- キャラクター配置・アニメーションスケール更新 ---
+function updatePosition(c, animate) {
+    c.element.style.transition = animate ? 'left 1.5s ease-in-out, bottom 1.5s ease-in-out, transform 0.3s ease' : 'none';
+    c.bubble.style.transition = animate ? 'left 1.5s ease-in-out, bottom 1.5s ease-in-out' : 'none';
+
+    c.element.style.left   = c.x + 'px';
+    c.element.style.bottom = c.y + 'px';
+
+    const scaleFactor = c.isDragging ? 1.0 : 1 - Math.max(0, Math.min(c.y - 40, 110)) / 110 * 0.35;
+
+    // カスタムCSSプロパティでキーフレームアニメ（working）とスケール値を共有可能にする
+    c.element.style.setProperty('--chara-dir', c.direction);
+    c.element.style.setProperty('--chara-scale', scaleFactor);
+
+    if (!c.element.classList.contains('working')) {
+        c.element.style.transform = `scaleX(${c.direction * scaleFactor}) scaleY(${scaleFactor})`;
+    }
+    c.element.style.zIndex = c.isDragging ? 100 : Math.max(1, 20 - Math.floor(c.y / 10));
+
+    c.bubble.style.left   = (c.x + 5) + 'px';
+    c.bubble.style.bottom = (c.y + 90 * scaleFactor) + 'px';
+}
+
+function showBubble(c, text) {
+    c.bubble.innerText = text;
+    c.bubble.style.display = 'block';
+}
+
+// --- キャラクター行動AI (ウロウロ / ストレッチ / お座り) ---
+function scheduleWalk(c) {
+    if (c.walkTimer) return;
+    const delay = (currentTimeOfDay === 3 && currentPhase === 'idle') ? 6000 : Math.floor(Math.random() * 2000) + 1500;
+    c.walkTimer = setTimeout(() => {
+        c.walkTimer = null;
+        doAction(c);
+    }, delay);
+}
+
+function doAction(c) {
+    if (c.isReacting || c.isSleeping || c.isDragging) {
+        scheduleWalk(c);
+        return;
+    }
+
+    // 集中時間フェーズの行動制限
+    if (currentPhase === 'work') {
+        // 集中時間中は特定の「机作業エリア」に固定、またはその場で小さく作業モーション
+        c.element.style.backgroundImage = `url('${c.imgWork}')`;
+        c.element.classList.add('working');
+        if (Math.random() < 0.05) { showBubble(c, '✍️…'); setTimeout(() => c.bubble.style.display='none', 1000); }
+        scheduleWalk(c);
+        return;
+    } else {
+        c.element.classList.remove('working');
+    }
+
+    // 通常時・休憩時のランダム行動分岐
+    const rand = Math.random();
+    if (rand < 0.6) {
+        // 1. 通常のウロウロ歩き
+        c.actionType = 'walk';
+        c.element.style.backgroundImage = `url('${c.imgNormal}')`;
+        const newX = Math.floor(Math.random() * 215) + 15;
+        let newY = Math.floor(Math.random() * 110) + 40; 
+        if (c.id === 3) newY = Math.floor(Math.random() * 120) + 100; // 死神ちゃんは少し上空ホバー可
+
+        c.direction = (newX < c.x) ? 1 : -1;
+        c.x = newX; c.y = newY;
+        updatePosition(c, true);
+
+        if (Math.random() < 0.15) checkChat();
+    } else if (rand < 0.8) {
+        // 2. その場でピョンピョン（ストレッチ運動）
+        c.actionType = 'stretch';
+        showBubble(c, '🎵');
+        doPyon(c, () => { c.bubble.style.display = 'none'; });
+    } else {
+        // 3. その場でお座り／もぐもぐ（小休憩モーション）
+        c.actionType = 'sit';
+        c.element.style.backgroundImage = `url('${c.imgEat}')`;
+        setTimeout(() => {
+            if (!c.isReacting && currentPhase !== 'work') c.element.style.backgroundImage = `url('${c.imgNormal}')`;
+        }, 1500);
+    }
+
+    // 夜間の自動睡眠判定
+    if (currentTimeOfDay === 3 && currentPhase === 'idle' && Math.random() < 0.3) {
+        c.isSleeping = true;
+        c.element.style.backgroundImage = `url('${c.imgSleep}')`;
+        c.element.classList.add('sleep');
+    } else {
+        scheduleWalk(c);
+    }
+}
+
+// チャットシステム
+function checkChat() {
+    if (currentPhase === 'work') return;
+    const c1 = charas[0], c2 = charas[1];
+    if (c1.isReacting || c2.isReacting || c1.isSleeping || c2.isSleeping) return;
+    if (Math.abs(c1.x - c2.x) + Math.abs(c1.y - c2.y) >= 120) return;
+
+    c1.isReacting = c2.isReacting = true;
+    c1.direction = (c1.x < c2.x) ? -1 : 1;
+    c2.direction = (c2.x < c1.x) ? -1 : 1;
+    updatePosition(c1, true); updatePosition(c2, true);
+
+    const pair = chatPhrases[Math.floor(Math.random() * chatPhrases.length)];
+    playSE(chatSound); showBubble(c1, pair[0]);
+    
+    setTimeout(() => { playSE(chatSound); showBubble(c2, pair[1]); }, 700);
+    setTimeout(() => {
+        c1.bubble.style.display = c2.bubble.style.display = 'none';
+        c1.isReacting = c2.isReacting = false;
+        scheduleWalk(c1); scheduleWalk(c2);
+    }, 2600);
+}
+
+// --- タイマーコアシステムロジック ---
+function switchPresetMode() {
+    const mode = document.getElementById('timerMode').value;
+    const customDiv = document.getElementById('customSettings');
+    if (mode === 'pomodoro') {
+        customDiv.style.display = 'none';
+        if (!isTimerRunning) { timeLeft = 25 * 60; updateTimerDisplay(); }
+    } else {
+        customDiv.style.display = 'flex';
+        if (!isTimerRunning) { syncCustomTime(); }
+    }
+}
+
+function syncCustomTime() {
+    const min = parseInt(document.getElementById('customWork').value) || 25;
+    timeLeft = min * 60;
+    updateTimerDisplay();
+}
+
+function updateTimerDisplay() {
+    const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+    const s = (timeLeft % 60).toString().padStart(2, '0');
+    timerDisplay.innerText = `${m}:${s}`;
+}
+
+function startTimer() {
+    unlockAudio();
+    if (isTimerRunning) return;
+
+    isTimerRunning = true;
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+    document.getElementById('timerMode').disabled = true;
+
+    if (currentPhase === 'idle') {
+        currentPhase = 'work';
+        timerStatus.innerText = '🔥 集中時間！がんばろう！';
+        // 集中が始まったら全員一斉に起きる
+        charas.forEach(c => {
+            c.isSleeping = false;
+            c.element.classList.remove('sleep');
+            c.element.classList.add('working');
+            c.element.style.backgroundImage = `url('${c.imgWork}')`;
+        });
