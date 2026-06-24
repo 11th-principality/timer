@@ -1,914 +1,1583 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ちいさい春木大佐たちのタイマー部屋</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <style>
-        /* ===== DESIGN TOKENS ===== */
-        :root {
-            --ink:      #1a1a2e;
-            --parchment:#faf7f2;
-            --warm-mid: #e8e0d4;
-            --accent:   #c97b4b;
-            --accent-lt:#f0c49a;
-            --teal:     #3d8b85;
-            --teal-lt:  #a8d4d1;
-            --muted:    #8a7f75;
-            --radius-lg:18px;
-            --radius-md:10px;
-            --shadow:   0 8px 32px rgba(26,26,46,.12);
-            --shadow-sm:0 2px 8px  rgba(26,26,46,.08);
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ちいさい春木大佐たちのタイマー</title>
+<style>
+/* ────────────────────────────────────────
+   リセット・基盤
+──────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --accent:      #00796b;
+  --accent-soft: #b2dfdb;
+  --bg-app:      #e0f7fa;
+  --white:       #ffffff;
+  --text:        #1a1a1a;
+  --shadow:      0 15px 35px rgba(0,0,0,0.2);
 
-        body {
-            min-height: 100vh;
-            background: var(--parchment);
-            /* 細かい和紙テクスチャ風グラデ */
-            background-image:
-                radial-gradient(ellipse at 20% 10%, #eedfd0 0%, transparent 55%),
-                radial-gradient(ellipse at 80% 90%, #d4e8e6 0%, transparent 55%);
-            font-family: 'Zen Maru Gothic', sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 24px;
-        }
+  /* タイマーリング */
+  --ring-size: 160px;
+  --ring-stroke: 10;
+}
 
-        /* ===== LAYOUT ===== */
-        .main-layout {
-            display: flex;
-            gap: 20px;
-            align-items: flex-start;
-            max-width: 900px;
-            width: 100%;
-        }
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--bg-app);
+  font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;
+}
 
-        /* ===== STAGE ===== */
-        .stage-container {
-            width: 340px;
-            height: 540px;
-            background-image: url('background_day.png');
-            background-size: cover;
-            background-position: center;
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow);
-            position: relative;
-            overflow: hidden;
-            border: 3px solid rgba(255,255,255,.7);
-            flex-shrink: 0;
-        }
-        /* 舞台の薄いビネット */
-        .stage-container::after {
-            content:'';
-            position:absolute; inset:0;
-            border-radius: var(--radius-lg);
-            box-shadow: inset 0 0 60px rgba(26,26,46,.18);
-            pointer-events:none;
-            z-index:2;
-        }
+/* ────────────────────────────────────────
+   ステージ
+──────────────────────────────────────── */
+.stage-container {
+  width: 350px;
+  height: 620px;
+  background-image: url('bg_sea_day.png');
+  background-size: cover;
+  background-position: center;
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+  border: 6px solid var(--white);
+  transition: background-image 0.8s ease;
+}
 
-        .window-overlay {
-            position:absolute; inset:0;
-            pointer-events:none; z-index:1;
-            mix-blend-mode:multiply; opacity:0;
-            transition: opacity 1s ease;
-        }
-        .window-overlay.rain   { background:rgba(0,15,30,.25);  opacity:1; }
-        .window-overlay.forest { background:rgba(10,40,10,.15); opacity:1; }
+/* タイマー中の外枠グロー */
+.stage-container.timer-running {
+  box-shadow: 0 0 0 4px var(--accent), var(--shadow);
+  animation: glowPulse 2s ease-in-out infinite;
+}
+.stage-container.timer-break {
+  box-shadow: 0 0 0 4px #ff8f00, var(--shadow);
+  animation: glowPulse 2s ease-in-out infinite;
+}
+@keyframes glowPulse {
+  0%,100% { box-shadow: 0 0 0 3px currentColor, var(--shadow); }
+  50%      { box-shadow: 0 0 0 7px currentColor, var(--shadow); }
+}
 
-        /* ===== CHARACTERS ===== */
-        .character {
-            width:95px; height:95px;
-            background-size:contain;
-            background-repeat:no-repeat;
-            background-position:bottom center;
-            position:absolute;
-            cursor:grab;
-            user-select:none;
-            z-index:10;
-        }
-        .character:active { cursor:grabbing; }
+/* ────────────────────────────────────────
+   雨エフェクト（CSS）
+──────────────────────────────────────── */
+.rain-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 5;
+  display: none;
+  overflow: hidden;
+}
+.stage-container.sound-rain .rain-overlay { display: block; }
+.raindrop {
+  position: absolute;
+  top: -20px;
+  width: 1.5px;
+  border-radius: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(180,210,255,0.7));
+  animation: falling linear infinite;
+}
+@keyframes falling {
+  to { transform: translateY(680px); }
+}
 
-        @keyframes sleepZzz {
-            0%  { opacity:0; transform:translateY(0) scale(.6); }
-            50% { opacity:1; }
-            100%{ opacity:0; transform:translateY(-20px) scale(1); }
-        }
-        .character.sleep::after {
-            content:'💤';
-            position:absolute; top:-10px; right:10px;
-            font-size:16px;
-            animation:sleepZzz 2s infinite ease-in-out;
-        }
+/* 木漏れ日エフェクト（森） */
+.forest-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 5;
+  display: none;
+  background: radial-gradient(ellipse at 30% 20%, rgba(255,255,180,0.18) 0%, transparent 60%),
+              radial-gradient(ellipse at 70% 40%, rgba(255,255,180,0.12) 0%, transparent 50%);
+  animation: komorebi 6s ease-in-out infinite alternate;
+}
+.stage-container.sound-forest .forest-overlay { display: block; }
+@keyframes komorebi {
+  0%   { opacity: 0.6; transform: scale(1) translateX(0); }
+  100% { opacity: 1;   transform: scale(1.04) translateX(6px); }
+}
 
-        .speech-bubble {
-            position:absolute;
-            background:rgba(255,255,255,.95);
-            border:1.5px solid var(--warm-mid);
-            border-radius:8px;
-            padding:4px 9px;
-            font-size:11px; font-weight:700;
-            color:var(--ink);
-            box-shadow:var(--shadow-sm);
-            display:none; z-index:30;
-            white-space:nowrap; pointer-events:none;
-        }
-        .speech-bubble::after {
-            content:'';
-            position:absolute; bottom:-5px; left:50%;
-            transform:translateX(-50%);
-            border-width:5px 5px 0;
-            border-style:solid;
-            border-color:rgba(255,255,255,.95) transparent;
-            display:block; width:0;
-        }
+/* ────────────────────────────────────────
+   キャラクター
+──────────────────────────────────────── */
+.character {
+  width: 95px; height: 95px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  position: absolute;
+  cursor: grab;
+  user-select: none;
+  z-index: 10;
+  transition: transform 0.3s ease;
+}
+.character:active { cursor: grabbing; }
 
-        @keyframes pyon {
-            0%  { bottom:var(--pyon-base); }
-            35% { bottom:calc(var(--pyon-base) + 25px); }
-            65% { bottom:calc(var(--pyon-base) + 25px); }
-            100%{ bottom:var(--pyon-base); }
-        }
-        .pyon { animation:pyon .45s ease-in-out forwards; }
+/* 💤 */
+@keyframes sleepZzz {
+  0%   { opacity: 0; transform: translateY(0) scale(0.6); }
+  50%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-20px) scale(1); }
+}
+.character.sleep::after {
+  content: '💤';
+  position: absolute;
+  top: -10px; right: 10px;
+  font-size: 16px;
+  animation: sleepZzz 2s infinite ease-in-out;
+}
 
-        @keyframes typing {
-            0%,100%{ transform:scaleX(var(--chara-dir)) scale(var(--chara-scale)) translateY(0); }
-            50%    { transform:scaleX(var(--chara-dir)) scale(var(--chara-scale)) translateY(-4px); }
-        }
-        .working { animation:typing .6s infinite ease-in-out; }
+/* ぴょん */
+@keyframes pyon {
+  0%   { bottom: var(--pyon-base); }
+  35%  { bottom: calc(var(--pyon-base) + 22px); }
+  65%  { bottom: calc(var(--pyon-base) + 22px); }
+  100% { bottom: var(--pyon-base); }
+}
+.pyon { animation: pyon 0.45s ease-in-out forwards; }
 
-        .snack {
-            width:45px; height:45px;
-            background-size:contain; background-repeat:no-repeat;
-            position:absolute; bottom:155px; right:110px;
-            display:none; z-index:15;
-        }
+/* ストレッチ */
+@keyframes stretch {
+  0%   { transform: scaleX(var(--sx)) scaleY(var(--sy)); }
+  40%  { transform: scaleX(calc(var(--sx) * 0.88)) scaleY(calc(var(--sy) * 1.18)); }
+  70%  { transform: scaleX(calc(var(--sx) * 1.10)) scaleY(calc(var(--sy) * 0.90)); }
+  100% { transform: scaleX(var(--sx)) scaleY(var(--sy)); }
+}
+.stretching { animation: stretch 1.2s ease-in-out forwards; }
 
-        /* ステージ内フードボタン */
-        .stage-controls {
-            position:absolute; bottom:14px;
-            width:100%; display:flex; flex-direction:column;
-            align-items:center; gap:8px; z-index:40;
-        }
-        .menu-popup {
-            display:none;
-            background:rgba(250,247,242,.97);
-            border:1.5px solid var(--warm-mid);
-            padding:8px 12px; border-radius:30px;
-            box-shadow:var(--shadow); gap:8px;
-        }
+/* ダンス */
+@keyframes dance {
+  0%,100% { transform: scaleX(var(--sx)) scaleY(var(--sy)) rotate(0deg); }
+  25%      { transform: scaleX(var(--sx)) scaleY(var(--sy)) rotate(-8deg) translateY(-4px); }
+  75%      { transform: scaleX(var(--sx)) scaleY(var(--sy)) rotate(8deg)  translateY(-4px); }
+}
+.dancing { animation: dance 0.5s ease-in-out infinite; }
 
-        /* ===== DASHBOARD ===== */
-        .dashboard-panel {
-            flex:1;
-            background:rgba(255,255,255,.75);
-            backdrop-filter:blur(12px);
-            -webkit-backdrop-filter:blur(12px);
-            border:1.5px solid rgba(255,255,255,.9);
-            border-radius:var(--radius-lg);
-            padding:24px 22px;
-            box-shadow:var(--shadow);
-            display:flex; flex-direction:column; gap:0;
-            height:546px;
-            overflow-y:auto;
-        }
+/* ────────────────────────────────────────
+   吹き出し
+──────────────────────────────────────── */
+.speech-bubble {
+  position: absolute;
+  background: var(--white);
+  border-radius: 10px;
+  padding: 5px 10px;
+  font-size: 11px; font-weight: bold; color: #333;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  display: none; z-index: 30;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -5px; left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px 5px 0;
+  border-style: solid;
+  border-color: var(--white) transparent;
+  display: block; width: 0;
+}
 
-        /* ===== SECTION HEADER ===== */
-        .section-label {
-            font-size:10px; font-weight:700; letter-spacing:.12em;
-            text-transform:uppercase; color:var(--muted);
-            padding-bottom:6px;
-            border-bottom:1px solid var(--warm-mid);
-            margin-bottom:12px;
-        }
-        .dash-section { margin-bottom:18px; }
+/* ────────────────────────────────────────
+   おやつ
+──────────────────────────────────────── */
+.snack {
+  width: 45px; height: 45px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  position: absolute;
+  bottom: 155px; right: 110px;
+  display: none; z-index: 15;
+}
 
-        /* ===== TIMER ===== */
-        .timer-block {
-            text-align:center;
-            background:linear-gradient(135deg, var(--ink) 0%, #2d2d4e 100%);
-            border-radius:var(--radius-md);
-            padding:16px 10px 12px;
-            margin-bottom:18px;
-            box-shadow:0 4px 20px rgba(26,26,46,.22);
-        }
-        .timer-display {
-            font-family:'JetBrains Mono', monospace;
-            font-size:52px; font-weight:600;
-            color:#fff;
-            letter-spacing:.04em;
-            line-height:1;
-        }
-        .timer-status {
-            font-size:11px; font-weight:700;
-            letter-spacing:.08em; text-transform:uppercase;
-            color:var(--accent-lt);
-            margin-top:6px; height:16px;
-        }
+/* ────────────────────────────────────────
+   ハート
+──────────────────────────────────────── */
+@keyframes floatHeart {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-50px) scale(1.4); }
+}
+.float-heart {
+  position: absolute; font-size: 20px;
+  pointer-events: none; z-index: 50;
+  animation: floatHeart 1.2s ease-out forwards;
+}
 
-        /* ===== BUTTONS ===== */
-        .control-group {
-            display:flex; gap:8px; justify-content:center;
-            margin-bottom:18px;
-        }
+/* ────────────────────────────────────────
+   タイマーパネル（上部）
+──────────────────────────────────────── */
+.timer-panel {
+  position: absolute;
+  top: 12px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
 
-        button {
-            font-family:'Zen Maru Gothic', sans-serif;
-            font-size:12px; font-weight:700;
-            border:none; border-radius:30px;
-            padding:8px 18px;
-            cursor:pointer;
-            transition:all .18s ease;
-            line-height:1;
-        }
+/* ポモドーロ表示 */
+.pomodoro-row {
+  display: flex; gap: 5px; align-items: center;
+}
+.pomodoro-row span {
+  font-size: 18px;
+  filter: grayscale(1) opacity(0.35);
+  transition: filter 0.4s;
+}
+.pomodoro-row span.done  { filter: none; }
 
-        .btn-primary {
-            background:var(--accent);
-            color:#fff;
-            box-shadow:0 3px 12px rgba(201,123,75,.35);
-        }
-        .btn-primary:hover { background:#b5693a; transform:translateY(-1px); box-shadow:0 5px 16px rgba(201,123,75,.4); }
+/* タイマーリング */
+.timer-ring-wrap {
+  position: relative;
+  width: var(--ring-size);
+  height: var(--ring-size);
+}
+.timer-ring-wrap svg {
+  width: 100%; height: 100%;
+  transform: rotate(-90deg);
+}
+.ring-bg    { fill: none; stroke: rgba(255,255,255,0.4); stroke-width: var(--ring-stroke); }
+.ring-prog  {
+  fill: none;
+  stroke: var(--white);
+  stroke-width: var(--ring-stroke);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear;
+}
+.ring-prog.break-mode { stroke: #ffcc02; }
 
-        .btn-secondary {
-            background:var(--warm-mid);
-            color:var(--ink);
-        }
-        .btn-secondary:hover { background:#d6ccbf; transform:translateY(-1px); }
+.timer-display {
+  position: absolute;
+  inset: 0; display: flex;
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+}
+.timer-label {
+  font-size: 10px; font-weight: bold;
+  color: rgba(255,255,255,0.85);
+  letter-spacing: 0.08em;
+  background: rgba(0,0,0,0.18);
+  padding: 1px 7px; border-radius: 8px;
+}
+.timer-time {
+  font-size: 34px; font-weight: 900;
+  color: var(--white);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.timer-session-label {
+  font-size: 9px;
+  color: rgba(255,255,255,0.75);
+}
 
-        .btn-teal {
-            background:var(--teal);
-            color:#fff;
-            box-shadow:0 3px 12px rgba(61,139,133,.3);
-        }
-        .btn-teal:hover { background:#2e706a; transform:translateY(-1px); }
+/* ────────────────────────────────────────
+   タイマー操作ボタン
+──────────────────────────────────────── */
+.timer-controls {
+  display: flex; gap: 8px; align-items: center;
+}
+.btn-icon {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.92);
+  color: var(--accent);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.18);
+  transition: transform 0.12s, background 0.2s;
+}
+.btn-icon:hover { transform: scale(1.1); }
+.btn-icon.primary {
+  width: 44px; height: 44px; font-size: 20px;
+  background: var(--accent); color: var(--white);
+}
 
-        /* stage menu btn */
-        .menu-btn {
-            background:rgba(255,255,255,.88);
-            color:var(--ink);
-            border:1.5px solid rgba(255,255,255,.9);
-            font-size:11px; font-weight:700;
-            padding:7px 16px;
-            box-shadow:0 2px 10px rgba(0,0,0,.15);
-        }
-        .menu-btn:hover { background:#fff; transform:translateY(-1px); }
+/* モード選択タブ */
+.mode-tabs {
+  display: flex; gap: 4px;
+  background: rgba(0,0,0,0.18);
+  border-radius: 20px;
+  padding: 3px;
+}
+.mode-tab {
+  padding: 3px 10px;
+  border: none; border-radius: 16px;
+  font-size: 10px; font-weight: bold;
+  color: rgba(255,255,255,0.75);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.mode-tab.active {
+  background: var(--white);
+  color: var(--accent);
+}
 
-        button:disabled {
-            background:var(--warm-mid) !important;
-            color:var(--muted) !important;
-            cursor:not-allowed; transform:none !important;
-            box-shadow:none !important;
-        }
+/* ────────────────────────────────────────
+   カスタム時間入力
+──────────────────────────────────────── */
+.custom-time-row {
+  display: none;
+  gap: 4px; align-items: center;
+}
+.custom-time-row.visible { display: flex; }
+.time-input {
+  width: 44px;
+  text-align: center;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.9);
+  color: var(--accent);
+  font-size: 14px; font-weight: bold;
+  padding: 3px 4px;
+}
+.custom-time-row label {
+  font-size: 10px; color: rgba(255,255,255,0.9); font-weight: bold;
+}
+.btn-set {
+  padding: 3px 10px;
+  border: none; border-radius: 10px;
+  background: var(--white);
+  color: var(--accent);
+  font-size: 11px; font-weight: bold;
+  cursor: pointer;
+}
 
-        /* ===== SETTINGS ===== */
-        .setting-row {
-            display:flex; align-items:center;
-            justify-content:space-between;
-            font-size:12px; gap:8px;
-            color:var(--ink);
-            margin-bottom:10px;
-        }
-        .setting-row label { color:var(--muted); font-size:11px; white-space:nowrap; }
+/* ────────────────────────────────────────
+   作業メモ入力
+──────────────────────────────────────── */
+.memo-row {
+  display: flex; gap: 4px; align-items: center;
+}
+.memo-input {
+  width: 170px;
+  border: none; border-radius: 10px;
+  background: rgba(255,255,255,0.88);
+  color: var(--text);
+  font-size: 11px;
+  padding: 4px 8px;
+  outline: none;
+}
+.memo-input::placeholder { color: #aaa; }
 
-        select, input[type="number"] {
-            font-family:'Zen Maru Gothic', sans-serif;
-            font-size:12px;
-            padding:5px 10px;
-            border-radius:6px;
-            border:1.5px solid var(--warm-mid);
-            background:var(--parchment);
-            color:var(--ink);
-            outline:none;
-        }
-        select:focus, input[type="number"]:focus {
-            border-color:var(--teal);
-        }
+/* ────────────────────────────────────────
+   下部コントロールエリア
+──────────────────────────────────────── */
+.bottom-controls {
+  position: absolute;
+  bottom: 10px; width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px; z-index: 40;
+}
 
-        input[type="range"] {
-            accent-color:var(--teal);
-            height:3px;
-        }
+/* サウンドバー */
+.sound-bar {
+  display: flex; gap: 6px;
+  align-items: center;
+  background: rgba(255,255,255,0.88);
+  border-radius: 16px;
+  padding: 5px 10px;
+}
+.sound-btn {
+  padding: 3px 8px;
+  border: none; border-radius: 12px;
+  font-size: 11px; font-weight: bold;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.sound-btn.active {
+  background: var(--accent);
+  color: var(--white);
+}
+.volume-slider {
+  -webkit-appearance: none;
+  width: 64px; height: 4px;
+  border-radius: 2px;
+  background: var(--accent-soft);
+  outline: none; cursor: pointer;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 
-        /* ===== PROGRESS LOG ===== */
-        .progress-list {
-            list-style:none;
-            padding:0; margin:0;
-            max-height:108px; overflow-y:auto;
-            font-size:11px;
-        }
-        .progress-list li {
-            padding:5px 0;
-            border-bottom:1px dashed var(--warm-mid);
-            color:var(--muted);
-        }
-        .progress-list:empty::before {
-            content:'まだ記録なし';
-            color:var(--muted); font-size:11px;
-        }
+/* アラーム選択 */
+.alarm-row {
+  display: flex; gap: 5px; align-items: center;
+}
+.alarm-row label { font-size: 10px; color: #555; font-weight: bold; }
+.alarm-select {
+  border: none; border-radius: 8px;
+  background: rgba(255,255,255,0.9);
+  color: var(--accent);
+  font-size: 11px; font-weight: bold;
+  padding: 2px 6px;
+  cursor: pointer;
+}
 
-        /* ===== HEART FLOAT ===== */
-        @keyframes floatHeart {
-            0%  { opacity:1; transform:translateY(0) scale(1); }
-            100%{ opacity:0; transform:translateY(-50px) scale(1.4); }
-        }
-        .float-heart {
-            position:absolute; font-size:20px;
-            pointer-events:none; z-index:50;
-            animation:floatHeart 1.2s ease-out forwards;
-        }
+/* おやつメニュー */
+.menu-popup {
+  display: none;
+  background: rgba(255,255,255,0.95);
+  padding: 8px; border-radius: 15px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  gap: 6px; flex-wrap: wrap;
+  justify-content: center;
+  max-width: 260px;
+}
+.menu-popup.open { display: flex; }
 
-        /* ===== DIVIDER ===== */
-        .divider {
-            border:0; border-top:1px solid var(--warm-mid);
-            margin:0 0 18px;
-        }
+/* 汎用ボタン */
+button.pill {
+  padding: 6px 14px;
+  font-size: 11px; font-weight: bold;
+  border: none; border-radius: 25px;
+  background: rgba(255,255,255,0.9);
+  color: var(--accent);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.13);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+button.pill:hover { transform: scale(1.04); }
+button.pill.green { background: var(--accent); color: var(--white); }
 
-        /* ===== RESPONSIVE ===== */
-        @media (max-width:768px) {
-            .main-layout { flex-direction:column; align-items:center; }
-            .dashboard-panel { width:340px; height:auto; }
-        }
+/* ────────────────────────────────────────
+   記録パネル（スライドオーバーレイ）
+──────────────────────────────────────── */
+.record-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 60;
+  display: none;
+  align-items: flex-end;
+}
+.record-overlay.open { display: flex; }
 
-        /* thin scrollbar */
-        ::-webkit-scrollbar { width:4px; }
-        ::-webkit-scrollbar-track { background:transparent; }
-        ::-webkit-scrollbar-thumb { background:var(--warm-mid); border-radius:4px; }
-    </style>
+.record-panel {
+  width: 100%;
+  max-height: 80%;
+  background: var(--white);
+  border-radius: 18px 18px 0 0;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.record-panel h2 {
+  font-size: 14px; font-weight: 900;
+  color: var(--accent);
+  text-align: center;
+}
+.record-close {
+  position: absolute;
+  top: 10px; right: 12px;
+  background: none; border: none;
+  font-size: 20px; cursor: pointer; color: #666;
+}
+
+/* グラフ */
+.graph-tabs {
+  display: flex; gap: 4px; justify-content: center;
+}
+.graph-tab {
+  padding: 3px 12px;
+  border: none; border-radius: 14px;
+  font-size: 11px; font-weight: bold;
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+}
+.graph-tab.active { background: var(--accent); color: var(--white); }
+
+.graph-area {
+  display: flex; align-items: flex-end;
+  gap: 4px; height: 80px;
+  padding: 0 4px;
+  border-bottom: 2px solid var(--accent-soft);
+}
+.bar-wrap {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+}
+.bar {
+  width: 100%;
+  background: var(--accent);
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+  transition: height 0.4s ease;
+}
+.bar-label { font-size: 9px; color: #888; }
+.bar-val   { font-size: 9px; color: var(--accent); font-weight: bold; }
+
+/* ログリスト */
+.log-list {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.log-item {
+  background: #f5f5f5;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 11px; color: #444;
+  display: flex; gap: 8px; align-items: center;
+}
+.log-item .log-time { color: var(--accent); font-weight: bold; min-width: 72px; }
+.log-item .log-memo { flex: 1; }
+.log-item .log-count { color: #999; font-size: 10px; }
+
+/* エクスポートボタン */
+.export-btn {
+  align-self: center;
+  padding: 6px 18px;
+  border: none; border-radius: 20px;
+  background: var(--accent); color: var(--white);
+  font-size: 11px; font-weight: bold;
+  cursor: pointer;
+}
+
+/* ────────────────────────────────────────
+   チェックマーク演出（タイマー完了）
+──────────────────────────────────────── */
+@keyframes popIn {
+  0%   { transform: translate(-50%,-50%) scale(0); opacity: 0; }
+  60%  { transform: translate(-50%,-50%) scale(1.2); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+}
+.complete-badge {
+  position: absolute; top: 44%; left: 50%;
+  transform: translate(-50%,-50%) scale(0);
+  font-size: 64px;
+  z-index: 55; pointer-events: none;
+  opacity: 0;
+}
+.complete-badge.show {
+  animation: popIn 0.5s cubic-bezier(.34,1.56,.64,1) forwards;
+}
+@keyframes fadeOut { to { opacity: 0; } }
+.complete-badge.hide {
+  animation: fadeOut 0.5s ease forwards;
+}
+</style>
 </head>
 <body>
 
-<div class="main-layout">
-    <!-- STAGE -->
-    <div class="stage-container" id="stage">
-        <div id="windowOverlay" class="window-overlay"></div>
+<div class="stage-container" id="stage">
 
-        <div id="bubble1" class="speech-bubble"></div>
-        <div id="bubble3" class="speech-bubble"></div>
+  <!-- エフェクトオーバーレイ -->
+  <div class="rain-overlay" id="rainOverlay"></div>
+  <div class="forest-overlay"></div>
 
-        <div id="chara1" class="character"></div>
-        <div id="chara3" class="character"></div>
+  <!-- 吹き出し -->
+  <div id="bubble1" class="speech-bubble"></div>
+  <div id="bubble2" class="speech-bubble"></div>
 
-        <div id="snack" class="snack"></div>
+  <!-- キャラクター -->
+  <div id="chara1" class="character"></div>
+  <div id="chara2" class="character"></div>
 
-        <div class="stage-controls">
-            <div id="menuPopup" class="menu-popup">
-                <button class="btn-secondary" onclick="giveFood('snack.png')">🍩 ドーナツ</button>
-                <button class="btn-secondary" onclick="giveFood('parfait.png')">🍨 パフェ</button>
-            </div>
-            <button id="stageMenuBtn" class="menu-btn" onclick="toggleMenu()">ごはんをあげる</button>
-        </div>
+  <!-- おやつ -->
+  <div id="snack" class="snack"></div>
+
+  <!-- タイマー完了バッジ -->
+  <div class="complete-badge" id="completeBadge">🎉</div>
+
+  <!-- ====== タイマーパネル ====== -->
+  <div class="timer-panel">
+    <!-- ポモドーロ進捗 -->
+    <div class="pomodoro-row" id="pomodoroRow"></div>
+
+    <!-- モードタブ -->
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="tabPomo"   onclick="setMode('pomo')">🍅 ポモドーロ</button>
+      <button class="mode-tab"        id="tabCustom" onclick="setMode('custom')">⚙️ カスタム</button>
     </div>
 
-    <!-- DASHBOARD -->
-    <div class="dashboard-panel">
-
-        <!-- タイマー本体 -->
-        <div class="timer-block">
-            <div id="timerDisplay" class="timer-display">25:00</div>
-            <div id="timerStatus" class="timer-status">のんびり中</div>
-        </div>
-
-        <div class="control-group">
-            <button id="startBtn"  class="btn-primary"   onclick="startTimer()">▶ スタート</button>
-            <button id="pauseBtn"  class="btn-secondary" onclick="pauseTimer()" disabled>⏸ 停止</button>
-            <button id="resetBtn"  class="btn-secondary" onclick="resetTimer()">↺ リセット</button>
-        </div>
-
-        <hr class="divider">
-
-        <!-- タイマー設定 -->
-        <div class="dash-section">
-            <div class="section-label">タイマー設定</div>
-            <div class="setting-row">
-                <label>モード</label>
-                <select id="timerMode" onchange="switchPresetMode()">
-                    <option value="pomodoro">ポモドーロ (25分 / 5分)</option>
-                    <option value="custom">カスタム手動設定</option>
-                </select>
-            </div>
-            <div id="customSettings" class="setting-row" style="display:none;">
-                <label>集中(分) <input type="number" id="customWork"  value="25" min="1" max="180" style="width:48px;"></label>
-                <label>休憩(分) <input type="number" id="customBreak" value="5"  min="1" max="60"  style="width:48px;"></label>
-            </div>
-        </div>
-
-        <!-- 環境音設定 -->
-        <div class="dash-section">
-            <div class="section-label">環境音 &amp; アラーム</div>
-            <div class="setting-row">
-                <label>BGM</label>
-                <select id="bgmSelect" onchange="changeBGM()">
-                    <option value="umi">🌊 波の音</option>
-                    <option value="rain">☔ 雨の音</option>
-                    <option value="forest">🌲 森の音</option>
-                </select>
-            </div>
-            <div class="setting-row">
-                <label>音量</label>
-                <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5" oninput="adjustVolume()" style="flex:1; margin:0 4px;">
-            </div>
-            <div class="setting-row">
-                <label>アラーム</label>
-                <select id="alarmSelect">
-                    <option value="alarm1">⏰ デジタル</option>
-                    <option value="alarm2">🔔 チャイム</option>
-                    <option value="alarm3">✨ キラキラ</option>
-                </select>
-            </div>
-        </div>
-
-        <!-- 進捗ログ -->
-        <div class="dash-section" style="margin-bottom:0;">
-            <div class="section-label">本日の記録</div>
-            <ul id="progressList" class="progress-list"></ul>
-        </div>
+    <!-- カスタム時間入力 -->
+    <div class="custom-time-row" id="customRow">
+      <input type="number" id="customMin" class="time-input" value="25" min="1" max="99">
+      <label>分</label>
+      <button class="btn-set" onclick="applyCustomTime()">セット</button>
     </div>
+
+    <!-- タイマーリング -->
+    <div class="timer-ring-wrap">
+      <svg viewBox="0 0 160 160">
+        <circle class="ring-bg"   cx="80" cy="80" r="70"></circle>
+        <circle class="ring-prog" cx="80" cy="80" r="70" id="ringProg"
+                stroke-dasharray="439.82" stroke-dashoffset="0"></circle>
+      </svg>
+      <div class="timer-display">
+        <span class="timer-label"  id="timerLabel">FOCUS</span>
+        <span class="timer-time"   id="timerTime">25:00</span>
+        <span class="timer-session-label" id="sessionLabel">セッション 1</span>
+      </div>
+    </div>
+
+    <!-- 操作ボタン -->
+    <div class="timer-controls">
+      <button class="btn-icon" title="リセット" onclick="resetTimer()">↺</button>
+      <button class="btn-icon primary" id="btnStartStop" onclick="toggleTimer()">▶</button>
+      <button class="btn-icon" title="スキップ" onclick="skipPhase()">⏭</button>
+    </div>
+
+    <!-- メモ入力 -->
+    <div class="memo-row">
+      <input type="text" class="memo-input" id="memoInput"
+             placeholder="✏️ 作業メモ…（任意）" maxlength="30">
+    </div>
+  </div>
+
+  <!-- ====== 下部コントロール ====== -->
+  <div class="bottom-controls">
+
+    <!-- サウンド選択 + ボリューム -->
+    <div class="sound-bar">
+      <button class="sound-btn active" id="btnSea"    onclick="setSound('sea')">🌊</button>
+      <button class="sound-btn"        id="btnRain"   onclick="setSound('rain')">🌧️</button>
+      <button class="sound-btn"        id="btnForest" onclick="setSound('forest')">🌲</button>
+      <input  type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.05" value="0.5">
+      🔈
+    </div>
+
+    <!-- アラーム選択 -->
+    <div class="alarm-row">
+      <label>🔔 アラーム</label>
+      <select class="alarm-select" id="alarmSelect">
+        <option value="alarm_bell.mp3">ベル</option>
+        <option value="alarm_chime.mp3">チャイム</option>
+        <option value="alarm_marimba.mp3">マリンバ</option>
+      </select>
+    </div>
+
+    <!-- おやつメニュー -->
+    <div id="menuPopup" class="menu-popup">
+      <button class="pill" onclick="giveFood('snack.png')">🍩 ドーナツ</button>
+      <button class="pill" onclick="giveFood('parfait.png')">🍨 パフェ</button>
+      <button class="pill" onclick="giveFood('food_meat.png')">🍖 ほねつき肉</button>
+      <button class="pill" onclick="giveFood('food_omurice.png')">🍳 オムライス</button>
+    </div>
+
+    <div style="display:flex;gap:8px;">
+      <button class="pill green" onclick="toggleMenu()">🍩 ごはん</button>
+      <button class="pill"       onclick="openRecord()">📊 記録</button>
+    </div>
+  </div>
+
+  <!-- ====== 記録パネル ====== -->
+  <div class="record-overlay" id="recordOverlay">
+    <div class="record-panel">
+      <button class="record-close" onclick="closeRecord()">✕</button>
+      <h2>📊 進捗記録</h2>
+
+      <div class="graph-tabs">
+        <button class="graph-tab active" id="tabWeek"  onclick="showGraph('week')">週</button>
+        <button class="graph-tab"        id="tabMonth" onclick="showGraph('month')">月</button>
+      </div>
+
+      <div class="graph-area" id="graphArea"></div>
+
+      <div style="font-size:11px;color:#888;text-align:center;" id="graphSub"></div>
+
+      <div class="log-list" id="logList"></div>
+
+      <button class="export-btn" onclick="exportCSV()">📥 CSVダウンロード</button>
+    </div>
+  </div>
+
+  <!-- 音声 -->
+  <audio id="bgm"       loop><source src="sound_sea.mp3"    type="audio/mpeg"></audio>
+  <audio id="eatSound">     <source src="tabe.mp3"          type="audio/mpeg"></audio>
+  <audio id="chatSound">    <source src="sound_chat.mp3"    type="audio/mpeg"></audio>
+  <audio id="dragSound">    <source src="sound_drag.mp3"    type="audio/mpeg"></audio>
+  <audio id="dropSound">    <source src="sound_drop.mp3"    type="audio/mpeg"></audio>
+  <audio id="alarmSound">   <source src="alarm_bell.mp3"    type="audio/mpeg"></audio>
 </div>
 
-<audio id="bgm" loop><source src="umi.mp3" type="audio/mpeg"></audio>
-<audio id="eatSound"><source src="tabe.mp3" type="audio/mpeg"></audio>
-<audio id="dragSound"><source src="sound_drag.mp3" type="audio/mpeg"></audio>
-<audio id="dropSound"><source src="sound_drop.mp3" type="audio/mpeg"></audio>
-<audio id="chatSound"><source src="sound_chat.mp3" type="audio/mpeg"></audio>
-<audio id="alarmSound"></audio>
-
+<!-- ======================================================
+     SCRIPT
+====================================================== -->
 <script>
-// --- タイマーステート ---
-let timerInterval   = null;
-let isTimerRunning  = false;
-let currentPhase    = 'idle';
-let timeLeft        = 25 * 60;
-let pomodoroSessionCount = 0;
-
-// --- 要素参照 ---
-const stage         = document.getElementById('stage');
-const windowOverlay = document.getElementById('windowOverlay');
-const snackEl       = document.getElementById('snack');
-const menuPopup     = document.getElementById('menuPopup');
-const stageMenuBtn  = document.getElementById('stageMenuBtn');
-const timerDisplay  = document.getElementById('timerDisplay');
-const timerStatus   = document.getElementById('timerStatus');
-const startBtn      = document.getElementById('startBtn');
-const pauseBtn      = document.getElementById('pauseBtn');
-const progressList  = document.getElementById('progressList');
-const bgm           = document.getElementById('bgm');
-const eatSound      = document.getElementById('eatSound');
-const dragSound     = document.getElementById('dragSound');
-const dropSound     = document.getElementById('dropSound');
-const chatSound     = document.getElementById('chatSound');
-const alarmSound    = document.getElementById('alarmSound');
+/* ────────────────────────────────────────
+   音声ユーティリティ
+──────────────────────────────────────── */
+const bgm        = document.getElementById('bgm');
+const eatSound   = document.getElementById('eatSound');
+const chatSound  = document.getElementById('chatSound');
+const dragSound  = document.getElementById('dragSound');
+const dropSound  = document.getElementById('dropSound');
+const alarmSound = document.getElementById('alarmSound');
 
 let audioUnlocked = false;
 
-// --- キャラクター定義 ---
-const charas = [
-    { id:1, element:document.getElementById('chara1'), bubble:document.getElementById('bubble1'),
-      imgNormal:'chara_normal.png', imgEat:'chara_eat.png', imgSleep:'chara1_sleep.png',
-      imgKyaa:'chara1_kyaa.png', imgWork:'chara1_work.png',
-      x:60, y:60, direction:1, isReacting:false, isSleeping:false, isDragging:false,
-      walkTimer:null, maxY:150, actionType:'walk' },
-    { id:3, element:document.getElementById('chara3'), bubble:document.getElementById('bubble3'),
-      imgNormal:'chara_death.png', imgEat:'chara_death_eat.png', imgSleep:'chara3_sleep.png',
-      imgKyaa:'chara3_kyaa.png', imgWork:'chara3_work.png',
-      x:180, y:80, direction:1, isReacting:false, isSleeping:false, isDragging:false,
-      walkTimer:null, maxY:220, actionType:'walk' }
-];
-
-const chatPhrases = [["📝","🔥"],["🧐","💡"],["☕","🍩"],["💤","⭐"]];
-
-let currentTimeOfDay = -1;
-const backgrounds = {
-    0:'background_morning.png', 1:'background_day.png',
-    2:'background_evening.png', 3:'background_night.png'
-};
-
-// --- オーディオ ---
 function unlockAudio() {
-    if (audioUnlocked) return;
-    audioUnlocked = true;
-    [eatSound, dragSound, dropSound, chatSound, alarmSound].forEach(a => {
-        a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
-    });
-    playCurrentBGM();
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  [eatSound, chatSound, dragSound, dropSound, alarmSound].forEach(a => {
+    a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+  });
+  setTimeout(() => startBGM(), 300);
 }
 
-function playSE(audioEl) {
-    if (!audioEl) return;
-    unlockAudio();
-    audioEl.currentTime = 0;
-    audioEl.play().catch(() => {});
+function startBGM() {
+  bgm.volume = parseFloat(document.getElementById('volumeSlider').value);
+  bgm.play().catch(() => {});
 }
 
-// --- 時間帯 ---
-function getTimeOfDay() {
-    const h = new Date().getHours();
-    if (h >= 5  && h < 11) return 0;
-    if (h >= 11 && h < 17) return 1;
-    if (h >= 17 && h < 21) return 2;
-    return 3;
+function playSE(el) {
+  if (!el) return;
+  el.currentTime = 0;
+  el.play().catch(() => {});
+}
+
+document.getElementById('volumeSlider').addEventListener('input', e => {
+  bgm.volume = parseFloat(e.target.value);
+});
+
+/* ────────────────────────────────────────
+   サウンド & 背景切替
+──────────────────────────────────────── */
+const stage = document.getElementById('stage');
+const SOUND_MAP = {
+  sea:    { bgm: 'sound_sea.mp3',    bgs: ['bg_sea_morning.png','bg_sea_day.png','bg_sea_evening.png','bg_sea_night.png'] },
+  rain:   { bgm: 'sound_rain.mp3',   bgs: ['bg_rain_morning.png','bg_rain_day.png','bg_rain_evening.png','bg_rain_night.png'] },
+  forest: { bgm: 'sound_forest.mp3', bgs: ['bg_forest_morning.png','bg_forest_day.png','bg_forest_evening.png','bg_forest_night.png'] },
+};
+let currentSound = 'sea';
+
+function getTimeIndex() {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 11) return 0;
+  if (h >= 11 && h < 17) return 1;
+  if (h >= 17 && h < 21) return 2;
+  return 3;
+}
+
+function setSound(key) {
+  currentSound = key;
+  ['sea','rain','forest'].forEach(k => {
+    document.getElementById('btn' + k.charAt(0).toUpperCase() + k.slice(1))
+      .classList.toggle('active', k === key);
+  });
+  stage.classList.remove('sound-sea','sound-rain','sound-forest');
+  stage.classList.add('sound-' + key);
+
+  const vol = parseFloat(document.getElementById('volumeSlider').value);
+  bgm.src = SOUND_MAP[key].bgm;
+  bgm.load(); bgm.volume = vol;
+  bgm.play().catch(() => {});
+
+  updateBackground();
 }
 
 function updateBackground() {
-    const t = getTimeOfDay();
-    if (t !== currentTimeOfDay) {
-        currentTimeOfDay = t;
-        stage.style.backgroundImage = `url('${backgrounds[t]}')`;
-        if (t === 3 && currentPhase === 'idle') startNightMode();
-        else if (t !== 3) endNightMode();
+  const idx = getTimeIndex();
+  stage.style.backgroundImage = `url('${SOUND_MAP[currentSound].bgs[idx]}')`;
+  charas.forEach(c => {
+    if (idx === 3 && !timerRunning) {
+      goSleep(c);
+    } else if (idx !== 3 && c.isSleeping) {
+      wakeUp(c);
     }
+  });
 }
 
-function startNightMode() {
-    charas.forEach(c => {
-        c.isSleeping = true;
-        c.element.style.backgroundImage = `url('${c.imgSleep}')`;
-        c.element.classList.add('sleep');
-    });
-}
-function endNightMode() {
-    charas.forEach(c => {
-        c.isSleeping = false;
-        c.element.classList.remove('sleep');
-        c.element.style.backgroundImage = `url('${c.imgNormal}')`;
-    });
-}
+setInterval(updateBackground, 60000);
 
-setInterval(updateBackground, 30000);
-
-// --- キャラクター位置更新 ---
-function updatePosition(c, animate) {
-    c.element.style.transition = animate ? 'left 1.5s ease-in-out, bottom 1.5s ease-in-out' : 'none';
-    c.bubble.style.transition  = animate ? 'left 1.5s ease-in-out, bottom 1.5s ease-in-out' : 'none';
-    c.element.style.left   = c.x + 'px';
-    c.element.style.bottom = c.y + 'px';
-
-    const scaleFactor = c.isDragging ? 1.0 : 1 - Math.max(0, Math.min(c.y - 40, 110)) / 110 * 0.35;
-    c.element.style.setProperty('--chara-dir', c.direction);
-    c.element.style.setProperty('--chara-scale', scaleFactor);
-    if (!c.element.classList.contains('working')) {
-        c.element.style.transform = `scaleX(${c.direction * scaleFactor}) scaleY(${scaleFactor})`;
-    }
-    c.element.style.zIndex = c.isDragging ? 100 : Math.max(1, 20 - Math.floor(c.y / 10));
-    c.bubble.style.left   = (c.x + 5) + 'px';
-    c.bubble.style.bottom = (c.y + 90 * scaleFactor) + 'px';
+/* ────────────────────────────────────────
+   雨エフェクト生成
+──────────────────────────────────────── */
+const rainOverlay = document.getElementById('rainOverlay');
+for (let i = 0; i < 48; i++) {
+  const d = document.createElement('div');
+  d.className = 'raindrop';
+  d.style.left   = Math.random() * 100 + '%';
+  d.style.height = (8 + Math.random() * 14) + 'px';
+  d.style.animationDuration  = (0.55 + Math.random() * 0.6) + 's';
+  d.style.animationDelay     = (-Math.random() * 1.2) + 's';
+  d.style.opacity = 0.4 + Math.random() * 0.5;
+  rainOverlay.appendChild(d);
 }
 
-function showBubble(c, text) {
-    c.bubble.innerText = text;
-    c.bubble.style.display = 'block';
+/* ────────────────────────────────────────
+   アラーム
+──────────────────────────────────────── */
+document.getElementById('alarmSelect').addEventListener('change', e => {
+  alarmSound.src = e.target.value;
+  alarmSound.load();
+});
+
+function playAlarm() {
+  alarmSound.currentTime = 0;
+  alarmSound.play().catch(() => {});
 }
 
-// --- キャラクターAI ---
-function scheduleWalk(c) {
-    if (c.walkTimer) return;
-    const delay = (currentTimeOfDay === 3 && currentPhase === 'idle')
-        ? 6000
-        : Math.floor(Math.random() * 2000) + 1500;
-    c.walkTimer = setTimeout(() => { c.walkTimer = null; doAction(c); }, delay);
+/* ────────────────────────────────────────
+   ポモドーロ タイマー
+──────────────────────────────────────── */
+const POMO_WORK  = 25 * 60;
+const POMO_BREAK =  5 * 60;
+const POMO_TOTAL =  4;       // 4セット
+
+let timerMode     = 'pomo';  // 'pomo' | 'custom'
+let timerRunning  = false;
+let timerPhase    = 'work';  // 'work' | 'break'
+let timerSec      = POMO_WORK;
+let timerTotal    = POMO_WORK;
+let pomodoroCount = 0;
+let customSec     = 25 * 60;
+let timerInterval = null;
+
+const CIRCUMFERENCE = 2 * Math.PI * 70; // ≈ 439.82
+const ringProg   = document.getElementById('ringProg');
+const timerTime  = document.getElementById('timerTime');
+const timerLabel = document.getElementById('timerLabel');
+const sessionLbl = document.getElementById('sessionLabel');
+const btnSS      = document.getElementById('btnStartStop');
+
+function setMode(mode) {
+  timerMode = mode;
+  document.getElementById('tabPomo')  .classList.toggle('active', mode === 'pomo');
+  document.getElementById('tabCustom').classList.toggle('active', mode === 'custom');
+  document.getElementById('customRow').classList.toggle('visible', mode === 'custom');
+  resetTimer();
 }
 
-function doAction(c) {
-    if (c.isReacting || c.isSleeping || c.isDragging) { scheduleWalk(c); return; }
-
-    if (currentPhase === 'work') {
-        c.element.style.backgroundImage = `url('${c.imgWork}')`;
-        c.element.classList.add('working');
-        if (Math.random() < 0.05) { showBubble(c, '✍️…'); setTimeout(() => c.bubble.style.display='none', 1000); }
-        scheduleWalk(c); return;
-    } else {
-        c.element.classList.remove('working');
-    }
-
-    const rand = Math.random();
-    if (rand < 0.6) {
-        c.actionType = 'walk';
-        c.element.style.backgroundImage = `url('${c.imgNormal}')`;
-        const newX = Math.floor(Math.random() * 215) + 15;
-        let newY = Math.floor(Math.random() * 110) + 40;
-        if (c.id === 3) newY = Math.floor(Math.random() * 120) + 100;
-        c.direction = (newX < c.x) ? 1 : -1;
-        c.x = newX; c.y = newY;
-        updatePosition(c, true);
-        if (Math.random() < 0.15) checkChat();
-    } else if (rand < 0.8) {
-        c.actionType = 'stretch';
-        showBubble(c, '🎵');
-        doPyon(c, () => { c.bubble.style.display = 'none'; });
-    } else {
-        c.actionType = 'sit';
-        c.element.style.backgroundImage = `url('${c.imgEat}')`;
-        setTimeout(() => {
-            if (!c.isReacting && currentPhase !== 'work')
-                c.element.style.backgroundImage = `url('${c.imgNormal}')`;
-        }, 1500);
-    }
-
-    if (currentTimeOfDay === 3 && currentPhase === 'idle' && Math.random() < 0.3) {
-        c.isSleeping = true;
-        c.element.style.backgroundImage = `url('${c.imgSleep}')`;
-        c.element.classList.add('sleep');
-    } else {
-        scheduleWalk(c);
-    }
+function applyCustomTime() {
+  const m = parseInt(document.getElementById('customMin').value, 10) || 25;
+  customSec = m * 60;
+  timerSec = timerTotal = customSec;
+  timerPhase = 'work';
+  updateTimerUI();
 }
 
-function checkChat() {
-    if (currentPhase === 'work') return;
-    const c1 = charas[0], c2 = charas[1];
-    if (c1.isReacting || c2.isReacting || c1.isSleeping || c2.isSleeping) return;
-    if (Math.abs(c1.x - c2.x) + Math.abs(c1.y - c2.y) >= 120) return;
-    c1.isReacting = c2.isReacting = true;
-    c1.direction = (c1.x < c2.x) ? -1 : 1;
-    c2.direction = (c2.x < c1.x) ? -1 : 1;
-    updatePosition(c1, true); updatePosition(c2, true);
-    const pair = chatPhrases[Math.floor(Math.random() * chatPhrases.length)];
-    playSE(chatSound); showBubble(c1, pair[0]);
-    setTimeout(() => { playSE(chatSound); showBubble(c2, pair[1]); }, 700);
-    setTimeout(() => {
-        c1.bubble.style.display = c2.bubble.style.display = 'none';
-        c1.isReacting = c2.isReacting = false;
-        scheduleWalk(c1); scheduleWalk(c2);
-    }, 2600);
-}
-
-// --- タイマー ---
-function switchPresetMode() {
-    const mode = document.getElementById('timerMode').value;
-    document.getElementById('customSettings').style.display = (mode === 'custom') ? 'flex' : 'none';
-    if (!isTimerRunning) {
-        if (mode === 'pomodoro') { timeLeft = 25 * 60; }
-        else syncCustomTime();
-        updateTimerDisplay();
-    }
-}
-
-function syncCustomTime() {
-    timeLeft = (parseInt(document.getElementById('customWork').value) || 25) * 60;
-    updateTimerDisplay();
-}
-
-function updateTimerDisplay() {
-    const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
-    const s = (timeLeft % 60).toString().padStart(2, '0');
-    timerDisplay.innerText = `${m}:${s}`;
+function toggleTimer() {
+  unlockAudio();
+  if (timerRunning) {
+    pauseTimer();
+  } else {
+    startTimer();
+  }
 }
 
 function startTimer() {
-    unlockAudio();
-    if (isTimerRunning) return;
-    isTimerRunning = true;
-    startBtn.disabled = true; pauseBtn.disabled = false;
-    document.getElementById('timerMode').disabled = true;
-
-    if (currentPhase === 'idle') {
-        currentPhase = 'work';
-        timerStatus.innerText = 'FOCUS — がんばろう！';
-        charas.forEach(c => {
-            c.isSleeping = false;
-            c.element.classList.remove('sleep');
-            c.element.classList.add('working');
-            c.element.style.backgroundImage = `url('${c.imgWork}')`;
-        });
-        stageMenuBtn.disabled = true;
-    }
-
-    timerInterval = setInterval(() => {
-        timeLeft--;
-        updateTimerDisplay();
-        if (timeLeft <= 0) {
-            clearInterval(timerInterval);
-            isTimerRunning = false;
-            onPhaseComplete();
-        }
-    }, 1000);
+  timerRunning = true;
+  btnSS.textContent = '⏸';
+  stage.classList.add('timer-running');
+  stage.classList.remove('timer-break');
+  charas.forEach(c => {
+    if (c.isSleeping) wakeUp(c);
+    setCharaImg(c, c.imgThink);
+  });
+  timerInterval = setInterval(tickTimer, 1000);
 }
 
 function pauseTimer() {
-    if (!isTimerRunning) return;
-    clearInterval(timerInterval);
-    isTimerRunning = false;
-    startBtn.disabled = false; pauseBtn.disabled = true;
-    timerStatus.innerText = 'PAUSED';
+  timerRunning = false;
+  clearInterval(timerInterval);
+  btnSS.textContent = '▶';
+  stage.classList.remove('timer-running','timer-break');
+  charas.forEach(c => setCharaImg(c, c.imgNormal));
 }
 
 function resetTimer() {
-    clearInterval(timerInterval);
-    isTimerRunning = false;
-    startBtn.disabled = false; pauseBtn.disabled = true;
-    document.getElementById('timerMode').disabled = false;
-    stageMenuBtn.disabled = false;
-    currentPhase = 'idle';
-    timerStatus.innerText = 'のんびり中';
-    charas.forEach(c => {
-        c.element.classList.remove('working');
-        c.element.style.backgroundImage = `url('${c.imgNormal}')`;
-    });
-    if (document.getElementById('timerMode').value === 'pomodoro') timeLeft = 25 * 60;
-    else syncCustomTime();
-    updateTimerDisplay();
-    updateBackground();
+  pauseTimer();
+  timerPhase = 'work';
+  timerSec   = timerTotal = (timerMode === 'pomo') ? POMO_WORK : customSec;
+  pomodoroCount = 0;
+  updateTimerUI();
+  updatePomodoroRow();
 }
 
-function onPhaseComplete() {
-    alarmSound.src = `${document.getElementById('alarmSelect').value}.mp3`;
-    playSE(alarmSound);
-    const now = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+function skipPhase() {
+  if (timerMode !== 'pomo') return;
+  finishPhase(true);
+}
 
-    if (currentPhase === 'work') {
-        pomodoroSessionCount++;
-        addLog(`[${now}] 🎯 集中 #${pomodoroSessionCount} 達成！`);
-        currentPhase = 'break';
-        timerStatus.innerText = 'BREAK — おつかれさま！';
-        charas.forEach(c => {
-            c.element.classList.remove('working');
-            c.element.style.backgroundImage = `url('${c.imgEat}')`;
-            showBubble(c, '🎉 お疲れ様！');
-            doPyon(c, () => setTimeout(() => c.bubble.style.display='none', 1500));
-        });
-        const mode = document.getElementById('timerMode').value;
-        const breakMin = (mode === 'pomodoro') ? 5 : (parseInt(document.getElementById('customBreak').value) || 5);
-        timeLeft = breakMin * 60;
-        stageMenuBtn.disabled = false;
-        startTimer();
-    } else if (currentPhase === 'break') {
-        addLog(`[${now}] ☕ 休憩終了。次の準備をしよう！`);
-        resetTimer();
+function tickTimer() {
+  timerSec--;
+  if (timerSec <= 0) {
+    finishPhase(false);
+  } else {
+    updateTimerUI();
+  }
+}
+
+function finishPhase(skipped) {
+  clearInterval(timerInterval);
+  timerInterval = null;
+
+  if (timerMode === 'pomo') {
+    if (timerPhase === 'work') {
+      if (!skipped) {
+        pomodoroCount++;
+        saveRecord();
+        playAlarm();
+        showComplete();
+        charas.forEach(c => doCheerAnim(c));
+        if (pomodoroCount >= POMO_TOTAL) {
+          // 全セット完了
+          showBubble(charas[0], '🎊 全部おわった！');
+          showBubble(charas[1], '🎊 よくがんばった！');
+          setTimeout(() => {
+            charas.forEach(c => { c.bubble.style.display = 'none'; });
+            resetTimer();
+          }, 4000);
+          updatePomodoroRow();
+          return;
+        }
+      }
+      updatePomodoroRow();
+      timerPhase  = 'break';
+      timerSec    = timerTotal = POMO_BREAK;
+      stage.classList.remove('timer-running');
+      stage.classList.add('timer-break');
+      charas.forEach(c => setCharaImg(c, c.imgStretch));
+    } else {
+      timerPhase = 'work';
+      timerSec   = timerTotal = POMO_WORK;
+      stage.classList.remove('timer-break');
+      stage.classList.add('timer-running');
+      charas.forEach(c => setCharaImg(c, c.imgThink));
     }
-}
-
-function addLog(text) {
-    const li = document.createElement('li');
-    li.innerText = text;
-    progressList.insertBefore(li, progressList.firstChild);
-}
-
-// --- BGM ---
-const bgmFiles = { umi:'umi.mp3', rain:'rain.mp3', forest:'forest.mp3' };
-function changeBGM() {
-    const type = document.getElementById('bgmSelect').value;
-    windowOverlay.className = 'window-overlay ' + type;
-    bgm.src = bgmFiles[type];
-    if (audioUnlocked) playCurrentBGM();
-}
-function playCurrentBGM() {
-    bgm.volume = parseFloat(document.getElementById('volumeSlider').value);
-    bgm.play().catch(() => {});
-}
-function adjustVolume() {
-    bgm.volume = parseFloat(document.getElementById('volumeSlider').value);
-}
-
-// --- インタラクション制限 ---
-function isInteractionRestricted() {
-    if (currentPhase === 'work') {
-        charas.forEach(c => { showBubble(c, '🤫 今は集中！'); setTimeout(() => c.bubble.style.display='none', 1000); });
-        return true;
+    updateTimerUI();
+    timerInterval = setInterval(tickTimer, 1000);
+  } else {
+    // カスタム：完了
+    if (!skipped) {
+      saveRecord();
+      playAlarm();
+      showComplete();
+      charas.forEach(c => doCheerAnim(c));
     }
-    return false;
+    timerSec      = timerTotal = customSec;
+    timerRunning  = false;
+    btnSS.textContent = '▶';
+    stage.classList.remove('timer-running','timer-break');
+    charas.forEach(c => setCharaImg(c, c.imgNormal));
+    updateTimerUI();
+  }
 }
 
-// --- ステージクリック ---
-stage.addEventListener('click', e => {
-    if (e.target !== stage) return;
-    if (isInteractionRestricted()) return;
-    const rect = stage.getBoundingClientRect();
-    const tapX = e.clientX - rect.left;
-    const tapY = rect.bottom - e.clientY;
-    charas.forEach((c, i) => {
-        if (c.isDragging) return;
-        c.isSleeping = false;
-        c.element.classList.remove('sleep');
-        c.isReacting = true;
-        const offset = (i - 0.5) * 50;
-        c.x = Math.max(10, Math.min(tapX + offset, 245));
-        c.y = c.id === 3 ? Math.max(100, Math.min(tapY, 220)) : Math.max(40, Math.min(tapY, 150));
-        c.direction = (tapX + offset < c.x) ? 1 : -1;
-        updatePosition(c, true);
-        setTimeout(() => {
-            playSE(chatSound);
-            showBubble(c, ['✨','🎵'][i]);
-            c.isReacting = false;
-            setTimeout(() => { c.bubble.style.display='none'; scheduleWalk(c); }, 1200);
-        }, 1600);
-    });
-});
+function updateTimerUI() {
+  const m = String(Math.floor(timerSec / 60)).padStart(2, '0');
+  const s = String(timerSec % 60).padStart(2, '0');
+  timerTime.textContent = `${m}:${s}`;
 
-// --- ドラッグ ---
+  const frac = timerTotal > 0 ? timerSec / timerTotal : 1;
+  const offset = CIRCUMFERENCE * (1 - frac);
+  ringProg.style.strokeDashoffset = offset;
+  ringProg.classList.toggle('break-mode', timerPhase === 'break');
+
+  if (timerPhase === 'work') {
+    timerLabel.textContent = 'FOCUS';
+    sessionLbl.textContent = `セッション ${pomodoroCount + 1}`;
+  } else {
+    timerLabel.textContent = 'BREAK';
+    sessionLbl.textContent = 'お休みタイム 🍵';
+  }
+}
+
+function updatePomodoroRow() {
+  const row = document.getElementById('pomodoroRow');
+  row.innerHTML = '';
+  for (let i = 0; i < POMO_TOTAL; i++) {
+    const sp = document.createElement('span');
+    sp.textContent = '🍅';
+    if (i < pomodoroCount) sp.classList.add('done');
+    row.appendChild(sp);
+  }
+}
+
+updateTimerUI();
+updatePomodoroRow();
+
+/* ────────────────────────────────────────
+   完了バッジ演出
+──────────────────────────────────────── */
+function showComplete() {
+  const badge = document.getElementById('completeBadge');
+  badge.classList.remove('hide');
+  badge.classList.add('show');
+  setTimeout(() => {
+    badge.classList.remove('show');
+    badge.classList.add('hide');
+    setTimeout(() => badge.classList.remove('hide'), 500);
+  }, 2000);
+}
+
+/* ────────────────────────────────────────
+   キャラクター定義
+──────────────────────────────────────── */
+const charas = [
+  {
+    id: 1,
+    element: document.getElementById('chara1'),
+    bubble:  document.getElementById('bubble1'),
+    imgNormal:  'chara_normal.png',
+    imgEat:     'chara_eat.png',
+    imgSleep:   'chara1_sleep.png',
+    imgKyaa:    'chara1_kyaa.png',
+    imgThink:   'chara_think.png',
+    imgCheer:   'chara_cheer.png',
+    imgStretch: 'chara_stretch.png',
+    imgDance:   'chara_dance.png',
+    x: 55,  y: 70,  direction: 1,
+    isReacting: false, isSleeping: false, isDragging: false,
+    walkTimer: null, motionTimer: null, maxY: 150,
+  },
+  {
+    id: 2,
+    element: document.getElementById('chara2'),
+    bubble:  document.getElementById('bubble2'),
+    imgNormal:  'chara_death.png',
+    imgEat:     'chara_death_eat.png',
+    imgSleep:   'chara3_sleep.png',
+    imgKyaa:    'chara3_kyaa.png',
+    imgThink:   'chara_death_think.png',
+    imgCheer:   'chara_death_cheer.png',
+    imgStretch: 'chara_death_stretch.png',
+    imgDance:   'chara_death_dance.png',
+    x: 200, y: 80,  direction: -1,
+    isReacting: false, isSleeping: false, isDragging: false,
+    walkTimer: null, motionTimer: null, maxY: 180,
+  },
+];
+
+/* ────────────────────────────────────────
+   位置・スケール更新
+──────────────────────────────────────── */
+function updatePosition(c, animate) {
+  c.element.style.transition = animate
+    ? 'left 1.5s ease-in-out, bottom 1.5s ease-in-out, transform 0.3s ease'
+    : 'none';
+  c.bubble.style.transition = animate
+    ? 'left 1.5s ease-in-out, bottom 1.5s ease-in-out'
+    : 'none';
+  c.element.style.left   = c.x + 'px';
+  c.element.style.bottom = c.y + 'px';
+
+  const sf = c.isDragging ? 1.0 : 1 - Math.max(0, Math.min(c.y - 40, 110)) / 110 * 0.35;
+  c.element.style.setProperty('--sx', c.direction * sf);
+  c.element.style.setProperty('--sy', sf);
+  c.element.style.transform = `scaleX(${c.direction * sf}) scaleY(${sf})`;
+  c.element.style.zIndex    = c.isDragging ? 100 : Math.max(1, 20 - Math.floor(c.y / 10));
+
+  c.bubble.style.left   = (c.x + 5) + 'px';
+  c.bubble.style.bottom = (c.y + 90 * sf) + 'px';
+}
+
+function setCharaImg(c, src) {
+  c.element.style.backgroundImage = `url('${src}')`;
+}
+
+function showBubble(c, text) {
+  c.bubble.innerText = text;
+  c.bubble.style.display = 'block';
+}
+
+/* ────────────────────────────────────────
+   多彩なモーション
+──────────────────────────────────────── */
+// ぴょん
+function doPyon(c, cb) {
+  c.element.style.setProperty('--pyon-base', c.y + 'px');
+  c.element.classList.add('pyon');
+  c.element.addEventListener('animationend', function h() {
+    c.element.classList.remove('pyon');
+    c.element.removeEventListener('animationend', h);
+    if (cb) cb();
+  });
+}
+
+// ストレッチアニメ
+function doStretchAnim(c, cb) {
+  c.element.classList.add('stretching');
+  c.element.addEventListener('animationend', function h() {
+    c.element.classList.remove('stretching');
+    c.element.removeEventListener('animationend', h);
+    if (cb) cb();
+  });
+}
+
+// ダンスアニメ（数秒後に止まる）
+function doCheerAnim(c) {
+  if (c.isReacting || c.isSleeping) return;
+  c.isReacting = true;
+  setCharaImg(c, c.imgDance);
+  c.element.classList.add('dancing');
+  spawnHeart(c);
+  setTimeout(() => {
+    c.element.classList.remove('dancing');
+    setCharaImg(c, c.imgNormal);
+    c.isReacting = false;
+    scheduleWalk(c);
+  }, 3000);
+}
+
+// おやすみ中に少しうとうとして戻る（タイマー中はしない）
+function doNodOff(c) {
+  if (timerRunning || c.isReacting || c.isSleeping || c.isDragging) return;
+  c.isReacting = true;
+  const origImg = c.imgNormal;
+  setCharaImg(c, c.imgSleep);
+  c.element.classList.add('sleep');
+  setTimeout(() => {
+    c.element.classList.remove('sleep');
+    setCharaImg(c, origImg);
+    showBubble(c, 'Zzz…ハッ！');
+    c.isReacting = false;
+    setTimeout(() => { c.bubble.style.display = 'none'; scheduleWalk(c); }, 1200);
+  }, 2500);
+}
+
+/* ────────────────────────────────────────
+   歩行システム
+──────────────────────────────────────── */
+const chatPhrases = [
+  ['🫧','🌱'],['☀️','🌟'],['🌊','🌈'],['🌸','🍀'],
+  ['🌻','💐'],['🍩','🍨'],['🍵','☕'],['🎵','🎶'],
+];
+
+function scheduleWalk(c) {
+  if (c.walkTimer) return;
+  // タイマー中は動きを抑える
+  const base = timerRunning ? 4000 : 1800;
+  const jitter = timerRunning ? 3000 : 1500;
+  c.walkTimer = setTimeout(() => {
+    c.walkTimer = null;
+    doWalk(c);
+  }, base + Math.random() * jitter);
+}
+
+function doWalk(c) {
+  if (c.isReacting || c.isSleeping || c.isDragging) {
+    scheduleWalk(c); return;
+  }
+  const newX = Math.floor(Math.random() * 210) + 20;
+  const newY = Math.floor(Math.random() * 100) + 45;
+  c.direction = newX < c.x ? 1 : -1;
+  c.x = newX; c.y = newY;
+  updatePosition(c, true);
+
+  // たまに追加モーション
+  const roll = Math.random();
+  if (roll < 0.12 && !timerRunning) checkChat();
+  else if (roll < 0.18 && !timerRunning) {
+    setTimeout(() => { if (!c.isReacting && !c.isSleeping) doNodOff(c); }, 1600);
+    return;
+  } else if (roll < 0.24 && timerRunning) {
+    // タイマー中：2人が近づいておしゃべりしてもいいが控えめに
+  }
+  scheduleWalk(c);
+}
+
+/* ────────────────────────────────────────
+   おしゃべりシステム
+──────────────────────────────────────── */
+function checkChat() {
+  const c1 = charas[0], c2 = charas[1];
+  if (c1.isReacting || c2.isReacting || c1.isSleeping || c2.isSleeping) return;
+
+  // 近づける
+  c1.isReacting = c2.isReacting = true;
+  c1.direction  = -1; c2.direction = 1;
+  const cx = 175;
+  c1.x = cx - 55; c1.y = 80;
+  c2.x = cx + 10; c2.y = 80;
+  updatePosition(c1, true); updatePosition(c2, true);
+
+  const pair = chatPhrases[Math.floor(Math.random() * chatPhrases.length)];
+  setTimeout(() => { playSE(chatSound); showBubble(c1, pair[0]); }, 700);
+  setTimeout(() => { playSE(chatSound); showBubble(c2, pair[1]); }, 1400);
+  setTimeout(() => {
+    c1.bubble.style.display = c2.bubble.style.display = 'none';
+    c1.isReacting = c2.isReacting = false;
+    scheduleWalk(c1); scheduleWalk(c2);
+  }, 3000);
+}
+
+/* ────────────────────────────────────────
+   寝起き
+──────────────────────────────────────── */
+function goSleep(c) {
+  if (c.isSleeping || c.isDragging || c.isReacting) return;
+  if (c.walkTimer) { clearTimeout(c.walkTimer); c.walkTimer = null; }
+  c.isSleeping = true;
+  setCharaImg(c, c.imgSleep);
+  c.element.classList.add('sleep');
+}
+function wakeUp(c) {
+  if (!c.isSleeping) return;
+  c.isSleeping = false;
+  setCharaImg(c, c.imgNormal);
+  c.element.classList.remove('sleep');
+  c.bubble.style.display = 'none';
+  scheduleWalk(c);
+}
+
+/* ────────────────────────────────────────
+   ハート演出
+──────────────────────────────────────── */
+function spawnHeart(c) {
+  const h = document.createElement('div');
+  h.className = 'float-heart';
+  h.textContent = ['💖','💕','💗','💓'][Math.floor(Math.random() * 4)];
+  h.style.left   = (c.x + 20 + Math.random() * 30) + 'px';
+  h.style.bottom = (c.y + 80) + 'px';
+  stage.appendChild(h);
+  setTimeout(() => h.remove(), 1200);
+}
+
+/* ────────────────────────────────────────
+   ドラッグ & タップ
+──────────────────────────────────────── */
 function makeDraggable(chara) {
-    let dragging = false;
-    let startClientX, startClientY, startCharaX, startCharaY;
-    let dragMoved = false;
+  let dragging = false, dragMoved = false;
+  let startCX, startCY, startX, startY, longTimer;
 
-    function onDragStart(clientX, clientY) {
-        if (isInteractionRestricted()) return;
-        unlockAudio();
-        if (chara.isSleeping) {
-            chara.isSleeping = false;
-            chara.element.classList.remove('sleep');
-            scheduleWalk(chara); return;
-        }
-        dragging = true; dragMoved = false;
-        chara.isDragging = chara.isReacting = true;
-        if (chara.walkTimer) { clearTimeout(chara.walkTimer); chara.walkTimer = null; }
-        startClientX = clientX; startClientY = clientY;
-        startCharaX = chara.x;  startCharaY = chara.y;
-        chara.element.style.backgroundImage = `url('${chara.imgKyaa}')`;
-        updatePosition(chara, false);
-    }
-
-    function onDragMove(clientX, clientY) {
-        if (!dragging) return;
-        const dx = clientX - startClientX, dy = clientY - startClientY;
-        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-            if (!dragMoved) playSE(dragSound);
-            dragMoved = true;
-        }
-        chara.x = Math.max(0, Math.min(startCharaX + dx, 255));
-        chara.y = Math.max(10, Math.min(startCharaY - dy, 440));
-        updatePosition(chara, false);
-    }
-
-    function onDragEnd() {
-        if (!dragging) return;
+  function onStart(cx, cy) {
+    unlockAudio();
+    if (timerRunning && chara.isSleeping) { wakeUp(chara); return; }
+    if (chara.isSleeping) { wakeUp(chara); return; }
+    if (chara.isReacting) return;
+    dragging = dragMoved = false;
+    dragging = true;
+    chara.isDragging = chara.isReacting = true;
+    if (chara.walkTimer) { clearTimeout(chara.walkTimer); chara.walkTimer = null; }
+    startCX = cx; startCY = cy; startX = chara.x; startY = chara.y;
+    setCharaImg(chara, chara.imgKyaa);
+    updatePosition(chara, false);
+    // 長押し → ねんね（タイマー中は無効）
+    longTimer = setTimeout(() => {
+      if (!dragMoved && !timerRunning) {
         dragging = false;
         chara.isDragging = chara.isReacting = false;
-        chara.element.style.backgroundImage = `url('${chara.imgNormal}')`;
-        if (dragMoved) {
-            const landMax = chara.maxY ?? 150;
-            if (chara.y > landMax) chara.y = landMax;
-            if (chara.y < 40) chara.y = 40;
-            playSE(dropSound);
-            showBubble(chara, '💦');
-            setTimeout(() => chara.bubble.style.display='none', 1000);
-        } else {
-            spawnHeart(chara); playSE(chatSound);
-        }
-        updatePosition(chara, true);
-        scheduleWalk(chara);
+        setCharaImg(chara, chara.imgNormal);
+        sleepChara(chara);
+      }
+    }, 600);
+  }
+
+  function onMove(cx, cy) {
+    if (!dragging) return;
+    const dx = cx - startCX, dy = cy - startCY;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      if (!dragMoved) playSE(dragSound);
+      dragMoved = true;
+      clearTimeout(longTimer);
     }
+    chara.x = Math.max(0, Math.min(startX + dx, 255));
+    chara.y = Math.max(10, Math.min(startY - dy, 440));
+    updatePosition(chara, false);
+  }
 
-    chara.element.addEventListener('mousedown',  e => { if(e.button===0){e.preventDefault(); onDragStart(e.clientX, e.clientY);} });
-    document.addEventListener('mousemove',        e => { if(dragging) onDragMove(e.clientX, e.clientY); });
-    document.addEventListener('mouseup',         () => { if(dragging) onDragEnd(); });
-    chara.element.addEventListener('touchstart',  e => { e.preventDefault(); onDragStart(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
-    document.addEventListener('touchmove',        e => { if(dragging) onDragMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
-    document.addEventListener('touchend',        () => { if(dragging) onDragEnd(); });
+  function onEnd() {
+    clearTimeout(longTimer);
+    if (!dragging) return;
+    dragging = false;
+    if (dragMoved) {
+      chara.isDragging = false;
+      if (chara.y > (chara.maxY || 150)) chara.y = chara.maxY || 150;
+      if (chara.y < 40) chara.y = 40;
+      updatePosition(chara, false);
+      playSE(dropSound);
+      setCharaImg(chara, chara.imgNormal);
+      chara.isReacting = false;
+      showBubble(chara, '💦');
+      setTimeout(() => { if (!chara.isReacting) chara.bubble.style.display = 'none'; }, 1400);
+      scheduleWalk(chara);
+    } else {
+      chara.isDragging = chara.isReacting = false;
+      setCharaImg(chara, chara.imgNormal);
+      updatePosition(chara, false);
+      tapChara(chara);
+    }
+  }
+
+  chara.element.addEventListener('mousedown', e => { if (e.button === 0) { e.preventDefault(); onStart(e.clientX, e.clientY); } });
+  document.addEventListener('mousemove', e => { if (dragging) onMove(e.clientX, e.clientY); });
+  document.addEventListener('mouseup',   () => { if (dragging) onEnd(); });
+  chara.element.addEventListener('touchstart', e => { e.preventDefault(); onStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+  document.addEventListener('touchmove',  e => { if (dragging) { e.preventDefault(); onMove(e.touches[0].clientX, e.touches[0].clientY); } }, { passive: false });
+  document.addEventListener('touchend',   () => { if (dragging) onEnd(); });
 }
 
-function spawnHeart(c) {
-    const h = document.createElement('div');
-    h.className = 'float-heart'; h.textContent = '💖';
-    h.style.left   = (c.x + 30) + 'px';
-    h.style.bottom = (c.y + 80) + 'px';
-    stage.appendChild(h);
-    setTimeout(() => h.remove(), 1200);
+/* タップ撫で */
+function tapChara(c) {
+  if (c.isReacting || c.isSleeping || c.isDragging) return;
+  // タイマー中は軽い反応のみ
+  if (timerRunning) {
+    spawnHeart(c); playSE(chatSound);
+    showBubble(c, '🤫'); // がんばってる最中
+    setTimeout(() => { c.bubble.style.display = 'none'; }, 900);
+    return;
+  }
+  c.isReacting = true;
+  playSE(chatSound);
+  spawnHeart(c);
+  setCharaImg(c, c.imgEat);
+  showBubble(c, '💖');
+  doPyon(c, () => {
+    setCharaImg(c, c.imgNormal);
+    c.isReacting = false;
+    setTimeout(() => { if (!c.isSleeping && !c.isReacting) c.bubble.style.display = 'none'; }, 600);
+    scheduleWalk(c);
+  });
 }
 
-function doPyon(c, onFinish) {
-    c.element.style.setProperty('--pyon-base', c.y + 'px');
-    c.element.classList.add('pyon');
-    c.element.addEventListener('animationend', function handler() {
-        c.element.classList.remove('pyon');
-        c.element.removeEventListener('animationend', handler);
-        if (onFinish) onFinish();
-    });
+/* ねんね */
+function sleepChara(c) {
+  if (c.isReacting || c.isSleeping || c.isDragging) return;
+  c.isReacting = true;
+  spawnHeart(c);
+  setCharaImg(c, c.imgEat);
+  doPyon(c, () => {
+    c.isSleeping = true;
+    setCharaImg(c, c.imgSleep);
+    c.element.classList.add('sleep');
+    showBubble(c, '💤……');
+    c.isReacting = false;
+    setTimeout(() => {
+      if (!c.isSleeping) return;
+      wakeUp(c);
+    }, 8000);
+  });
 }
+
+/* ────────────────────────────────────────
+   ごはんシステム（タイマー中は無効）
+──────────────────────────────────────── */
+const snackEl  = document.getElementById('snack');
+const menuPopup = document.getElementById('menuPopup');
 
 function toggleMenu() {
-    if (isInteractionRestricted()) return;
-    menuPopup.style.display = (menuPopup.style.display === 'flex') ? 'none' : 'flex';
+  menuPopup.classList.toggle('open');
 }
 
-function giveFood(imgFile) {
-    if (isInteractionRestricted()) return;
-    menuPopup.style.display = 'none';
-    charas.forEach(c => { if(c.walkTimer){clearTimeout(c.walkTimer); c.walkTimer=null;} c.isReacting=true; });
-    snackEl.style.backgroundImage = `url('${imgFile}')`; snackEl.style.display = 'block';
-    const targets = [{x:100,y:100,dir:-1},{x:180,y:100,dir:1}];
-    charas.forEach((c,i) => { c.x=targets[i].x; c.y=targets[i].y; c.direction=targets[i].dir; updatePosition(c,true); });
+function giveFood(img) {
+  if (timerRunning) {
+    // タイマー中は軽い拒否
+    charas.forEach(c => { showBubble(c, '🍅 いまはがんばりちゅう！'); });
+    setTimeout(() => charas.forEach(c => { c.bubble.style.display='none'; }), 1500);
+    menuPopup.classList.remove('open');
+    return;
+  }
+  if (charas.some(c => c.isReacting)) return;
+  menuPopup.classList.remove('open');
+  charas.forEach(c => {
+    if (c.isSleeping) wakeUp(c);
+    if (c.walkTimer) { clearTimeout(c.walkTimer); c.walkTimer = null; }
+    c.isReacting = true;
+  });
+  snackEl.style.backgroundImage = `url('${img}')`;
+  snackEl.style.display = 'block';
+
+  const targets = [{ x:110, y:110, dir:-1 }, { x:180, y:110, dir:1 }];
+  charas.forEach((c, i) => {
+    c.x = targets[i].x; c.y = targets[i].y; c.direction = targets[i].dir;
+    updatePosition(c, true);
+  });
+  setTimeout(() => {
+    playSE(eatSound);
+    charas.forEach(c => setCharaImg(c, c.imgEat));
+    snackEl.style.display = 'none';
     setTimeout(() => {
-        playSE(eatSound);
-        charas.forEach(c => c.element.style.backgroundImage = `url('${c.imgEat}')`);
-        snackEl.style.display = 'none';
-        setTimeout(() => {
-            charas.forEach(c => { c.element.style.backgroundImage=`url('${c.imgNormal}')`; c.isReacting=false; scheduleWalk(c); });
-        }, 1500);
-    }, 1600);
+      charas.forEach(c => { setCharaImg(c, c.imgNormal); c.isReacting = false; updatePosition(c, true); scheduleWalk(c); });
+    }, 1500);
+  }, 1600);
 }
 
-// --- 初期化 ---
+/* ────────────────────────────────────────
+   床タップで集合（タイマー中は無効）
+──────────────────────────────────────── */
+stage.addEventListener('click', e => {
+  if (e.target !== stage) return;
+  if (timerRunning) return;
+  unlockAudio();
+  const rect = stage.getBoundingClientRect();
+  const tapX = e.clientX - rect.left;
+  const tapY = rect.bottom - e.clientY;
+  charas.forEach((c, i) => {
+    if (c.isDragging) return;
+    if (c.isSleeping) wakeUp(c);
+    c.isReacting = true;
+    c.x = Math.max(10, Math.min(tapX + (i - 0.5) * 55, 245));
+    c.y = Math.max(40, Math.min(tapY, c.maxY));
+    c.direction = (i === 0) ? -1 : 1;
+    updatePosition(c, true);
+    setTimeout(() => {
+      playSE(chatSound);
+      showBubble(c, ['✨','🌟'][i]);
+      c.isReacting = false;
+      setTimeout(() => { c.bubble.style.display = 'none'; scheduleWalk(c); }, 1200);
+    }, 1600);
+  });
+});
+
+/* ────────────────────────────────────────
+   初期化
+──────────────────────────────────────── */
 charas.forEach(c => {
-    c.element.style.backgroundImage = `url('${c.imgNormal}')`;
-    updatePosition(c, false);
-    makeDraggable(c);
-    scheduleWalk(c);
+  setCharaImg(c, c.imgNormal);
+  updatePosition(c, false);
+  makeDraggable(c);
+  scheduleWalk(c);
 });
 updateBackground();
+
+/* ────────────────────────────────────────
+   進捗記録 (localStorage)
+──────────────────────────────────────── */
+const STORAGE_KEY = 'pomodoro_records_v2';
+
+function loadRecords() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { return []; }
+}
+function saveRecords(list) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+function saveRecord() {
+  const memo = document.getElementById('memoInput').value.trim();
+  const rec = {
+    ts:    Date.now(),
+    date:  new Date().toISOString().slice(0, 10),
+    time:  new Date().toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit' }),
+    memo:  memo || '（メモなし）',
+    count: pomodoroCount,
+    phase: timerPhase,
+    mode:  timerMode,
+  };
+  const list = loadRecords();
+  list.unshift(rec);
+  if (list.length > 500) list.length = 500;
+  saveRecords(list);
+}
+
+/* ────────────────────────────────────────
+   記録パネル表示
+──────────────────────────────────────── */
+let graphMode = 'week';
+
+function openRecord() {
+  document.getElementById('recordOverlay').classList.add('open');
+  showGraph(graphMode);
+  renderLogList();
+}
+function closeRecord() {
+  document.getElementById('recordOverlay').classList.remove('open');
+}
+
+function showGraph(mode) {
+  graphMode = mode;
+  document.getElementById('tabWeek') .classList.toggle('active', mode === 'week');
+  document.getElementById('tabMonth').classList.toggle('active', mode === 'month');
+
+  const records = loadRecords();
+  const now = new Date();
+  let labels = [], counts = [];
+
+  if (mode === 'week') {
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now); d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      labels.push(['日','月','火','水','木','金','土'][d.getDay()]);
+      counts.push(records.filter(r => r.date === key && r.phase === 'work').length);
+    }
+  } else {
+    const year = now.getFullYear(), month = now.getMonth();
+    const days = new Date(year, month + 1, 0).getDate();
+    // 週ごとに集計
+    const weeks = [0,0,0,0,0];
+    records.forEach(r => {
+      if (r.date.startsWith(`${year}-${String(month+1).padStart(2,'0')}`) && r.phase === 'work') {
+        const day = parseInt(r.date.slice(8), 10);
+        weeks[Math.floor((day - 1) / 7)]++;
+      }
+    });
+    const wkCount = Math.ceil(days / 7);
+    for (let w = 0; w < wkCount; w++) {
+      labels.push(`${w+1}週`);
+      counts.push(weeks[w]);
+    }
+  }
+
+  const maxVal = Math.max(...counts, 1);
+  const graphArea = document.getElementById('graphArea');
+  graphArea.innerHTML = '';
+  labels.forEach((lbl, i) => {
+    const wrap  = document.createElement('div'); wrap.className = 'bar-wrap';
+    const val   = document.createElement('div'); val.className  = 'bar-val';
+    val.textContent = counts[i] > 0 ? counts[i] : '';
+    const bar   = document.createElement('div'); bar.className  = 'bar';
+    bar.style.height = Math.max(2, (counts[i] / maxVal) * 70) + 'px';
+    bar.style.background = counts[i] > 0 ? 'var(--accent)' : 'var(--accent-soft)';
+    const label = document.createElement('div'); label.className = 'bar-label';
+    label.textContent = lbl;
+    wrap.append(val, bar, label);
+    graphArea.appendChild(wrap);
+  });
+
+  const total = counts.reduce((a,b) => a+b, 0);
+  document.getElementById('graphSub').textContent =
+    total > 0 ? `合計 ${total} ポモドーロ 🍅 (${(total * 25 / 60).toFixed(1)}時間)` : 'まだ記録がありません';
+}
+
+function renderLogList() {
+  const list = loadRecords().slice(0, 30);
+  const el = document.getElementById('logList');
+  el.innerHTML = '';
+  if (list.length === 0) {
+    el.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">記録なし</div>';
+    return;
+  }
+  list.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'log-item';
+    item.innerHTML = `
+      <span class="log-time">${r.date.slice(5)} ${r.time}</span>
+      <span class="log-memo">${escHtml(r.memo)}</span>
+      <span class="log-count">${r.phase === 'work' ? '🍅' : '☕'}</span>
+    `;
+    el.appendChild(item);
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ────────────────────────────────────────
+   CSV エクスポート
+──────────────────────────────────────── */
+function exportCSV() {
+  const list = loadRecords();
+  if (list.length === 0) { alert('記録がまだありません！'); return; }
+  const header = 'date,time,mode,memo\n';
+  const rows = list.map(r => `${r.date},${r.time},${r.mode === 'pomo' ? 'ポモドーロ' : 'カスタム'},${r.memo.replace(/,/g,'、')}`).join('\n');
+  const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `pomodoro_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
 </script>
 </body>
 </html>
