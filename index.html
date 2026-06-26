@@ -724,13 +724,11 @@ button.pill.green { background: var(--accent); color: var(--white); }
     </div>
   </div>
 
-  <!-- 音声 -->
-  <audio id="bgm"       loop><source src="sound_sea.mp3"    type="audio/mpeg"></audio>
-  <audio id="eatSound">     <source src="tabe.mp3"          type="audio/mpeg"></audio>
-  <audio id="chatSound">    <source src="sound_chat.mp3"    type="audio/mpeg"></audio>
-  <audio id="dragSound">    <source src="sound_drag.mp3"    type="audio/mpeg"></audio>
-  <audio id="dropSound">    <source src="sound_drop.mp3"    type="audio/mpeg"></audio>
-  <audio id="alarmSound">   <source src="alarm_bell.mp3"    type="audio/mpeg"></audio>
+  <!-- 音声：SE のみ <audio> 要素を使用。BGM・アラームは Web Audio API で処理 -->
+  <audio id="eatSound">  <source src="tabe.mp3"       type="audio/mpeg"></audio>
+  <audio id="chatSound"> <source src="sound_chat.mp3" type="audio/mpeg"></audio>
+  <audio id="dragSound"> <source src="sound_drag.mp3" type="audio/mpeg"></audio>
+  <audio id="dropSound"> <source src="sound_drop.mp3" type="audio/mpeg"></audio>
 </div>
 
 <!-- ======================================================
@@ -738,39 +736,135 @@ button.pill.green { background: var(--accent); color: var(--white); }
 ====================================================== -->
 <script>
 /* ────────────────────────────────────────
-   音声ユーティリティ
+   Web Audio API コア
+   - BGM : AudioContext でシームレスループ
+   - SE  : <audio>要素（軽量）
+   - アラーム : AudioContext で確実再生
 ──────────────────────────────────────── */
-const bgm        = document.getElementById('bgm');
-const eatSound   = document.getElementById('eatSound');
-const chatSound  = document.getElementById('chatSound');
-const dragSound  = document.getElementById('dragSound');
-const dropSound  = document.getElementById('dropSound');
-const alarmSound = document.getElementById('alarmSound');
+let actx = null;          // AudioContext（初回タップで生成）
+let bgmBuffer  = null;    // 現在のBGM AudioBuffer
+let bgmSource  = null;    // 現在の再生中 BufferSourceNode
+let bgmGain    = null;    // BGMのGainNode
+let bgmLoading = false;   // ロード中フラグ
+let currentSound = 'sea';
 
+// SE は <audio> 要素をそのまま使う
+const eatSound  = document.getElementById('eatSound');
+const chatSound = document.getElementById('chatSound');
+const dragSound = document.getElementById('dragSound');
+const dropSound = document.getElementById('dropSound');
+
+// アラームバッファキャッシュ
+const alarmBuffers = {};
+
+/* AudioContext を初回ユーザー操作で起動 */
 let audioUnlocked = false;
-
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  [eatSound, chatSound, dragSound, dropSound, alarmSound].forEach(a => {
+
+  actx     = new (window.AudioContext || window.webkitAudioContext)();
+  bgmGain  = actx.createGain();
+  bgmGain.connect(actx.destination);
+  bgmGain.gain.value = parseFloat(document.getElementById('volumeSlider').value);
+
+  // SE の <audio> ロック解除
+  [eatSound, chatSound, dragSound, dropSound].forEach(a => {
     a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
   });
-  setTimeout(() => startBGM(), 300);
+
+  // BGM スタート
+  setTimeout(() => loadAndPlayBGM(currentSound), 200);
+
+  // アラームを事前ロード（バックグラウンドで）
+  ['alarm_bell.mp3','alarm_chime.mp3','alarm_marimba.mp3'].forEach(src => preloadAlarm(src));
 }
 
-function startBGM() {
-  bgm.volume = parseFloat(document.getElementById('volumeSlider').value);
-  bgm.play().catch(() => {});
+/* ────── BGM シームレスループ ────── */
+async function loadAndPlayBGM(key) {
+  if (!actx || key === 'mute') return;
+  if (bgmLoading) return;
+  bgmLoading = true;
+
+  try {
+    const src = SOUND_MAP[key].bgm;
+    const res  = await fetch(src);
+    const ab   = await res.arrayBuffer();
+    const buf  = await actx.decodeAudioData(ab);
+
+    // 古いソースを止める
+    stopBGM();
+
+    bgmBuffer = buf;
+    bgmLoading = false;
+    startBGMLoop();
+  } catch(e) {
+    bgmLoading = false;
+    console.warn('BGM load error:', e);
+  }
 }
 
+function startBGMLoop() {
+  if (!actx || !bgmBuffer || !bgmGain) return;
+  stopBGM();
+  const src = actx.createBufferSource();
+  src.buffer = bgmBuffer;
+  src.loop   = true;          // ← Web Audio API のループは繋ぎ目ゼロ
+  src.connect(bgmGain);
+  src.start(0);
+  bgmSource = src;
+}
+
+function stopBGM() {
+  if (bgmSource) {
+    try { bgmSource.stop(); } catch(e) {}
+    bgmSource.disconnect();
+    bgmSource = null;
+  }
+}
+
+/* ボリュームスライダー */
+document.getElementById('volumeSlider').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  if (bgmGain) bgmGain.gain.value = v;
+});
+
+/* ────── SE 再生（<audio>要素） ────── */
 function playSE(el) {
   if (!el) return;
   el.currentTime = 0;
   el.play().catch(() => {});
 }
 
-document.getElementById('volumeSlider').addEventListener('input', e => {
-  bgm.volume = parseFloat(e.target.value);
+/* ────── アラーム（Web Audio API で確実再生） ────── */
+async function preloadAlarm(src) {
+  if (!actx || alarmBuffers[src]) return;
+  try {
+    const res = await fetch(src);
+    const ab  = await res.arrayBuffer();
+    alarmBuffers[src] = await actx.decodeAudioData(ab);
+  } catch(e) {}
+}
+
+async function playAlarm() {
+  if (!actx) return;
+  const src = document.getElementById('alarmSelect').value;
+
+  // まだロードされていなければ今すぐロード
+  if (!alarmBuffers[src]) await preloadAlarm(src);
+
+  const buf = alarmBuffers[src];
+  if (!buf) return;
+
+  const node = actx.createBufferSource();
+  node.buffer = buf;
+  node.connect(actx.destination); // BGMのGainを通さず直接（音量影響を受けない）
+  node.start(0);
+}
+
+/* アラーム選択変更時に先読み */
+document.getElementById('alarmSelect').addEventListener('change', e => {
+  if (actx) preloadAlarm(e.target.value);
 });
 
 /* ────────────────────────────────────────
@@ -782,7 +876,6 @@ const SOUND_MAP = {
   rain:   { bgm: 'sound_rain.mp3',   bgs: ['bg_rain_morning.png','bg_rain_day.png','bg_rain_evening.png','bg_rain_night.png'] },
   forest: { bgm: 'sound_forest.mp3', bgs: ['bg_forest_morning.png','bg_forest_day.png','bg_forest_evening.png','bg_forest_night.png'] },
 };
-let currentSound = 'sea';
 
 function getTimeIndex() {
   const h = new Date().getHours();
@@ -802,14 +895,11 @@ function setSound(key) {
   if (key !== 'mute') stage.classList.add('sound-' + key);
 
   if (key === 'mute') {
-    bgm.pause();
+    stopBGM();
+    bgmBuffer = null;
   } else {
-    const vol = parseFloat(document.getElementById('volumeSlider').value);
-    bgm.src = SOUND_MAP[key].bgm;
-    bgm.load(); bgm.volume = vol;
-    bgm.play().catch(() => {});
+    loadAndPlayBGM(key);
   }
-
   updateBackground();
 }
 
@@ -842,28 +932,6 @@ for (let i = 0; i < 48; i++) {
   d.style.animationDelay     = (-Math.random() * 1.2) + 's';
   d.style.opacity = 0.4 + Math.random() * 0.5;
   rainOverlay.appendChild(d);
-}
-
-/* ────────────────────────────────────────
-   アラーム
-──────────────────────────────────────── */
-document.getElementById('alarmSelect').addEventListener('change', e => {
-  // src差し替えだけしておく（loadはplayAlarm時に行う）
-  alarmSound.src = e.target.value;
-});
-
-function playAlarm() {
-  // アラームは毎回newで生成することでブラウザのロック問題を回避
-  const src = document.getElementById('alarmSelect').value;
-  const a = new Audio(src);
-  a.volume = 1.0;
-  a.play().catch(err => {
-    // フォールバック：既存要素で試みる
-    alarmSound.src = src;
-    alarmSound.currentTime = 0;
-    alarmSound.volume = 1.0;
-    alarmSound.play().catch(() => {});
-  });
 }
 
 /* ────────────────────────────────────────
