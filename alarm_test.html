@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>アラームテスト</title>
+<style>
+  body { font-family: sans-serif; display: flex; flex-direction: column;
+         align-items: center; justify-content: center; height: 100vh;
+         background: #e0f7fa; gap: 16px; margin: 0; }
+  button { padding: 14px 28px; font-size: 16px; font-weight: bold;
+           border: none; border-radius: 20px; cursor: pointer; }
+  .start  { background: #00796b; color: #fff; }
+  .alarm  { background: #ff5722; color: #fff; display: none; }
+  #log { font-size: 13px; color: #333; max-width: 320px;
+         background: #fff; border-radius: 12px; padding: 12px;
+         min-height: 80px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<h2>🔔 アラームテスト</h2>
+
+<!-- ① まずこのボタンを押してAudioをunlock -->
+<button class="start" id="btnUnlock" onclick="doUnlock()">
+  ① まずここをタップ（AudioUnlock）
+</button>
+
+<!-- ② unlock後にこれを押す -->
+<button class="alarm" id="btnAlarm" onclick="doAlarm()">
+  ② アラームを鳴らす！
+</button>
+
+<!-- 3秒タイマーボタン -->
+<button class="start" id="btnTimer" onclick="startTest()" style="background:#5c6bc0;display:none">
+  ③ 3秒後にアラームを自動で鳴らす
+</button>
+
+<div id="log">ここにログが出ます</div>
+
+<script>
+const log = document.getElementById('log');
+function addLog(msg) {
+  const t = new Date().toLocaleTimeString('ja-JP');
+  log.textContent += `[${t}] ${msg}\n`;
+}
+
+// アラームファイル候補（存在するものだけ使う）
+const ALARM_FILES = ['alarm_bell.mp3', 'alarm_chime.mp3', 'alarm_marimba.mp3'];
+let alarmEls = {};
+let unlocked = false;
+
+async function doUnlock() {
+  addLog('Unlockボタンが押されました');
+
+  // 各アラームファイルのaudio要素を作り、無音で一瞬再生してunlock
+  let anyOk = false;
+  for (const src of ALARM_FILES) {
+    const a = new Audio(src);
+    alarmEls[src] = a;
+    try {
+      a.volume = 0.001;
+      await a.play();
+      a.pause();
+      a.currentTime = 0;
+      a.volume = 1.0;
+      addLog(`✅ unlock成功: ${src}`);
+      anyOk = true;
+    } catch(e) {
+      addLog(`❌ unlock失敗: ${src} → ${e.message}`);
+    }
+  }
+
+  if (anyOk) {
+    unlocked = true;
+    document.getElementById('btnAlarm').style.display = 'block';
+    document.getElementById('btnTimer').style.display = 'block';
+    addLog('→ アラームボタンが使えるようになりました');
+  } else {
+    addLog('→ 全ファイルでunlock失敗。ファイルが存在するか確認してください');
+  }
+}
+
+async function doAlarm() {
+  if (!unlocked) { addLog('先に①を押してください'); return; }
+  addLog('アラーム再生を試みます...');
+
+  let played = false;
+  for (const src of ALARM_FILES) {
+    const a = alarmEls[src];
+    if (!a) continue;
+    try {
+      a.currentTime = 0;
+      a.volume = 1.0;
+      await a.play();
+      addLog(`🔔 再生成功: ${src}`);
+      played = true;
+      break; // 最初に成功したもので終了
+    } catch(e) {
+      addLog(`❌ 再生失敗: ${src} → ${e.message}`);
+    }
+  }
+  if (!played) addLog('→ 全ファイルで再生失敗');
+}
+
+function startTest() {
+  addLog('3秒後にアラームを自動再生します...');
+  let count = 3;
+  const iv = setInterval(() => {
+    addLog(`${count}...`);
+    count--;
+    if (count < 0) {
+      clearInterval(iv);
+      addLog('⏰ タイマー終了！アラーム再生！');
+      doAlarm();
+    }
+  }, 1000);
+}
+</script>
+</body>
+</html>
